@@ -37,6 +37,21 @@ real debugging time.
 - The melonds core's own `b_speed_fast` / `b_speed_slow` buttons sit flush against
   the bottom edge and can measure a few px off screen. That is cosmetic, not a bug.
 
+## Fullscreen
+
+iPhone Safari has **no** element-level fullscreen: `requestFullscreen` and
+`webkitRequestFullscreen` are both `undefined` on an ordinary element (only video
+gets `webkitEnterFullScreen`). The usual `if (rf) rf.call(el)` guard therefore
+silently does nothing, and `document.fullscreenEnabled` is not a safe proxy for
+the same reason. Detect on the element itself (`fullscreenFn` in `app.js`).
+
+When no method exists the app falls back to `#app.pseudo-full`, which drops the
+header and safe-area padding so the canvas fills the display. That is a real
+height change (348 -> 390 on iPhone 12 landscape), so `emulator.handleResize()`
+must be called after toggling. Because the header is gone, `.exit-full`
+(`#btnExitFull`) is the only way out, so it has to stay hittable; Escape also
+exits. Teardown resets the state, otherwise ejecting leaves the header hidden.
+
 ## Testing
 
 Chromium headless + CDP scripts in `/tmp` (`accept.js` full suite, `iphone2.js`
