@@ -1,0 +1,285 @@
+/* NDS Pocket — landscape-first shell around EmulatorJS */
+
+:root{
+  --bg:#0b0f14;
+  --panel:#131a22;
+  --panel2:#182231;
+  --line:#1f2c3a;
+  --text:#e6eef6;
+  --muted:#7d92a6;
+  --accent:#4d8dff;
+  --accent2:#9a6bff;
+  --ok:#35d0a5;
+  --warn:#f5b13d;
+  --danger:#ff6b6b;
+  --bar:48px;
+  --radius:12px;
+  --pad-opacity:.7;
+  --safe-t:env(safe-area-inset-top,0px);
+  --safe-b:env(safe-area-inset-bottom,0px);
+  --safe-l:env(safe-area-inset-left,0px);
+  --safe-r:env(safe-area-inset-right,0px);
+}
+
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+html{height:100%;background:var(--bg);-webkit-text-size-adjust:100%;overscroll-behavior:none}
+
+body{
+  height:100%;overflow:hidden;background:var(--bg);color:var(--text);
+  font:14px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  overscroll-behavior:none;-webkit-tap-highlight-color:transparent;
+  touch-action:manipulation;
+}
+
+.sprite{position:absolute;width:0;height:0;overflow:hidden}
+.sprite symbol path,.sprite symbol circle{fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+
+#app{
+  position:fixed;inset:0;display:flex;flex-direction:column;
+  padding:var(--safe-t) var(--safe-r) var(--safe-b) var(--safe-l);
+}
+
+/* ---------- header ---------- */
+
+#bar{
+  flex:0 0 auto;height:var(--bar);display:flex;align-items:center;gap:14px;
+  padding:0 10px;background:linear-gradient(180deg,#101822,#0d141c);
+  border-bottom:1px solid var(--line);z-index:30;
+}
+
+.brand{display:flex;align-items:center;gap:8px;font-size:14px;letter-spacing:.2px;white-space:nowrap}
+.brand b{font-weight:700}
+.brand b span{color:var(--accent);font-weight:600}
+.brand .dot{
+  width:9px;height:9px;border-radius:50%;background:var(--accent);
+  box-shadow:0 0 0 3px rgba(77,141,255,.18);flex:0 0 auto;
+}
+.brand .dot.live{background:var(--ok);box-shadow:0 0 0 3px rgba(53,208,165,.18)}
+
+.tools{display:flex;align-items:center;gap:6px;margin-left:auto;overflow-x:auto;scrollbar-width:none}
+.tools::-webkit-scrollbar{display:none}
+
+.tbtn{
+  display:inline-flex;align-items:center;gap:6px;flex:0 0 auto;
+  height:34px;padding:0 12px;border:1px solid var(--line);border-radius:9px;
+  background:var(--panel);color:var(--text);font:inherit;font-size:13px;font-weight:600;
+  cursor:pointer;transition:background .15s,border-color .15s,color .15s;
+}
+.tbtn svg{width:16px;height:16px;flex:0 0 auto}
+.tbtn:hover{background:var(--panel2);border-color:#2b3d4f}
+.tbtn:active{transform:translateY(1px)}
+.tbtn.on{border-color:rgba(77,141,255,.55);background:rgba(77,141,255,.14);color:#cfe0ff}
+.tbtn[disabled]{opacity:.45;pointer-events:none}
+
+.tfield{
+  display:inline-flex;align-items:center;gap:8px;flex:0 0 auto;height:34px;padding:0 10px;
+  border:1px solid var(--line);border-radius:9px;background:var(--panel);
+  font-size:12px;color:var(--muted);font-weight:600;
+}
+.tfield input[type=range]{
+  -webkit-appearance:none;appearance:none;width:96px;height:4px;border-radius:4px;
+  background:#26364a;outline:none;
+}
+.tfield input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none;appearance:none;width:16px;height:16px;border-radius:50%;
+  background:var(--accent);border:2px solid #0b0f14;cursor:pointer;
+}
+.tfield input[type=range]::-moz-range-thumb{
+  width:14px;height:14px;border-radius:50%;background:var(--accent);border:2px solid #0b0f14;cursor:pointer;
+}
+.tfield output{min-width:34px;text-align:right;color:var(--text);font-variant-numeric:tabular-nums}
+
+/* ---------- stage ---------- */
+
+#stage{position:relative;flex:1 1 auto;min-height:0;background:#05080b}
+
+#game{position:absolute;inset:0}
+#game .ejs_parent{background:#05080b}
+
+/* EmulatorJS chrome, restyled to match */
+.ejs_menu_bar{
+  background:rgba(12,18,26,.96);border:1px solid var(--line);border-radius:12px;
+  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+  padding:8px;box-shadow:0 12px 34px rgba(0,0,0,.6);bottom:8px;
+  transition:bottom .25s ease,opacity .3s ease,transform .3s ease;
+}
+body.pad-on .ejs_menu_bar{bottom:118px}
+.ejs_menu_button{border-radius:8px}
+.ejs_menu_button:hover{background:rgba(77,141,255,.16)}
+.ejs_virtualGamepad_open{display:none}
+.ejs_start_button{background:var(--accent)}
+.ejs_settings_parent{font-size:14px}
+
+/* ---------- overlays ---------- */
+
+.overlay{
+  position:absolute;inset:0;z-index:40;display:flex;align-items:center;justify-content:center;
+  padding:16px;background:radial-gradient(120% 100% at 50% 0%,#101a26 0%,#070b10 70%);
+  overflow:auto;
+}
+.overlay[hidden]{display:none}
+
+.card{
+  width:100%;max-width:440px;background:var(--panel);border:1px solid var(--line);
+  border-radius:16px;padding:22px;box-shadow:0 24px 60px rgba(0,0,0,.55);position:relative;
+}
+.card.slim{max-width:360px;text-align:center}
+.card.wide{max-width:620px;max-height:calc(100% - 8px);overflow:auto}
+
+.logo{display:flex;justify-content:center;color:var(--accent);margin-bottom:10px}
+.logo svg{width:72px;height:50px}
+
+.card h1{font-size:19px;font-weight:700;letter-spacing:.2px;margin-bottom:8px}
+.card.slim h1{font-size:16px}
+.lede{color:var(--muted);font-size:13.5px;line-height:1.6;margin-bottom:16px}
+.lede b{color:var(--text)}
+.lede code{background:#0d141c;border:1px solid var(--line);border-radius:5px;padding:1px 5px;font-size:12px}
+
+.drop{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;
+  padding:22px 16px;border:1.5px dashed #2c3f54;border-radius:13px;background:#0e161f;
+  cursor:pointer;transition:border-color .18s,background .18s;text-align:center;outline:none;
+}
+.drop:hover,.drop:focus-visible{border-color:var(--accent);background:#101b28}
+.drop.over{border-color:var(--accent);background:rgba(77,141,255,.12)}
+.drop strong{font-size:14px}
+.drop span{font-size:12px;color:var(--muted)}
+.drop code{font-size:11.5px;background:#0a1119;border:1px solid var(--line);border-radius:4px;padding:1px 4px}
+
+.row{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+.ghost{
+  flex:1 1 auto;min-width:140px;height:36px;padding:0 12px;border:1px solid var(--line);
+  border-radius:9px;background:transparent;color:var(--muted);font:inherit;font-size:12.5px;
+  font-weight:600;cursor:pointer;transition:color .15s,border-color .15s;
+}
+.ghost i{font-style:normal;opacity:.7;font-weight:500}
+.ghost:hover{color:var(--text);border-color:#2c3f54}
+.ghost.full{width:100%;flex:0 0 auto;margin-top:14px}
+
+.checks{list-style:none;margin-top:16px;display:flex;flex-direction:column;gap:6px}
+.checks li{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted)}
+.checks li::before{
+  content:"";width:7px;height:7px;border-radius:50%;flex:0 0 auto;background:#2c3f54;
+}
+.checks li.ok{color:#a9e8d3}
+.checks li.ok::before{background:var(--ok)}
+.checks li.warn{color:#f2d49b}
+.checks li.warn::before{background:var(--warn)}
+.checks li.bad{color:#ffb3b3}
+.checks li.bad::before{background:var(--danger)}
+
+.bar{height:5px;border-radius:5px;background:#1b2735;overflow:hidden;margin-top:6px}
+.bar i{display:block;height:100%;width:0%;border-radius:5px;background:linear-gradient(90deg,var(--accent),var(--accent2));transition:width .3s ease}
+
+.close{
+  position:absolute;top:12px;right:12px;width:30px;height:30px;border:1px solid var(--line);
+  border-radius:8px;background:var(--panel2);color:var(--muted);cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+}
+.close svg{width:15px;height:15px}
+.close:hover{color:var(--text)}
+
+/* Rotate hint: only while a game is running and the viewport is portrait. */
+#rotate{z-index:60}
+.logo.rot svg{width:46px;height:46px;animation:tilt 2.4s ease-in-out infinite}
+@keyframes tilt{0%,40%{transform:rotate(-16deg)}60%,100%{transform:rotate(16deg)}}
+
+.prose{font-size:13.5px;line-height:1.65;color:#c6d5e3}
+.prose h2{font-size:13px;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);margin:18px 0 8px}
+.prose h2:first-child{margin-top:0}
+.prose p{margin-bottom:10px;color:var(--muted)}
+.prose ul{margin:0 0 10px 18px;color:var(--muted)}
+.prose li{margin-bottom:5px}
+.prose kbd{
+  display:inline-block;min-width:20px;text-align:center;background:#0d141c;border:1px solid var(--line);
+  border-bottom-width:2px;border-radius:5px;padding:1px 6px;font:600 11.5px ui-monospace,Menlo,monospace;color:var(--text);
+}
+.prose table{width:100%;border-collapse:collapse;margin-bottom:10px;font-size:12.5px}
+.prose th,.prose td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)}
+.prose th{color:var(--muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.5px}
+.prose td{color:#c6d5e3}
+.prose .note{
+  border-left:2px solid var(--accent);background:rgba(77,141,255,.08);border-radius:0 8px 8px 0;
+  padding:9px 12px;margin-bottom:10px;color:#bcd2ea;font-size:12.5px;
+}
+.prose .note.warn{border-left-color:var(--warn);background:rgba(245,177,61,.09);color:#f0d9ac}
+.prose a{color:var(--accent)}
+
+/* ---------- on-screen controls ---------- */
+
+.ejs_virtualGamepad_parent{
+  bottom:calc(60px + var(--safe-b)) !important;
+  opacity:var(--pad-opacity);
+  transition:opacity .18s ease;
+  pointer-events:none;
+}
+.ejs_virtualGamepad_parent > div{pointer-events:auto}
+
+/* Pad off: hide the overlay entirely for physical-controller play. */
+body.pad-off .ejs_virtualGamepad_parent,
+body.pad-off #stick{display:none !important}
+
+.ejs_virtualGamepad_button{
+  width:56px !important;height:56px !important;line-height:56px !important;
+  font-size:19px !important;font-weight:700 !important;
+  background:rgba(230,238,246,.16) !important;
+  border:1.5px solid rgba(230,238,246,.34) !important;
+  color:#f2f7fc !important;
+  border-radius:50% !important;
+  backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px);
+  text-shadow:0 1px 3px rgba(0,0,0,.7);
+  transition:background .08s ease,transform .08s ease;
+}
+.ejs_virtualGamepad_button.ejs_virtualGamepad_button_down{
+  background:rgba(77,141,255,.6) !important;transform:scale(.94);
+}
+
+.ejs_virtualGamepad_left{left:calc(14px + var(--safe-l)) !important;bottom:0 !important;width:150px !important;height:150px !important}
+.ejs_virtualGamepad_right{right:calc(14px + var(--safe-r)) !important;bottom:0 !important;width:158px !important;height:158px !important}
+.ejs_virtualGamepad_bottom{bottom:0 !important}
+.ejs_virtualGamepad_top{bottom:230px !important}
+
+.ejs_dpad_main{filter:drop-shadow(0 2px 6px rgba(0,0,0,.5))}
+.ejs_dpad_bar{background:rgba(230,238,246,.24) !important;border-color:rgba(230,238,246,.34) !important}
+
+/* Analog stick rendering (used when "Stick" scheme is active) */
+#stick{
+  position:absolute;bottom:calc(58px + var(--safe-b));left:calc(20px + var(--safe-l));
+  width:150px;height:150px;border-radius:50%;z-index:5;
+  background:radial-gradient(circle at 50% 50%,rgba(230,238,246,.10),rgba(230,238,246,.03) 62%,transparent 70%);
+  border:1.5px solid rgba(230,238,246,.22);
+  opacity:var(--pad-opacity);touch-action:none;user-select:none;-webkit-user-select:none;
+}
+#stick[hidden]{display:none}
+#stickKnob{
+  position:absolute;left:50%;top:50%;width:62px;height:62px;margin:-31px 0 0 -31px;border-radius:50%;
+  background:rgba(230,238,246,.26);border:1.5px solid rgba(230,238,246,.42);
+  box-shadow:0 3px 12px rgba(0,0,0,.45);transition:background .1s ease;
+}
+#stick.active #stickKnob{background:rgba(77,141,255,.6)}
+
+/* ---------- compact landscape phones ---------- */
+
+@media (max-height:520px){
+  :root{--bar:42px}
+  .brand span.dot{display:none}
+  .tbtn{padding:0 9px}
+  .tbtn span{display:none}
+  .tbtn svg{width:17px;height:17px}
+  .tfield span,.tfield output{display:none}
+  .tfield input[type=range]{width:74px}
+  .ejs_virtualGamepad_button{width:50px !important;height:50px !important;line-height:50px !important;font-size:17px !important}
+  .ejs_virtualGamepad_left,.ejs_virtualGamepad_right{width:136px !important;height:136px !important}
+  #stick{width:132px;height:132px;bottom:calc(52px + var(--safe-b))}
+  #stickKnob{width:54px;height:54px;margin:-27px 0 0 -27px}
+  body.pad-on .ejs_menu_bar{bottom:104px}
+}
+
+@media (pointer:fine){
+  .ejs_virtualGamepad_button:hover{background:rgba(230,238,246,.26) !important}
+}
+
+@media (prefers-reduced-motion:reduce){
+  *{transition:none !important;animation:none !important}
+}
