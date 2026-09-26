@@ -13,11 +13,18 @@ copyrighted content.
    containing a ROM works too.
 2. Rotate to landscape. On iPhone, add it to the home screen first
    (**Share → Add to Home Screen**) so it launches without browser chrome.
-3. Play. Tap the lower screen to use the DS touchscreen.
+3. Play. The DS touchscreen is the right-hand panel — tap it directly.
 
 The emulator menu is the small handle at the bottom centre. Its own fullscreen
 button is intentionally hidden, because EmulatorJS force-locks NDS fullscreen to
 portrait, which fights this layout. Use **Full** in the top bar instead.
+
+### BIOS (optional)
+
+Games boot without one. If a title misbehaves, tap **Add NDS BIOS** and select
+`bios7.bin`, `bios9.bin` and `firmware.bin` together, or drop in a `.zip` holding
+them. Files are packed in the browser so the core finds them under their real
+names; nothing leaves the device.
 
 ## Controls
 

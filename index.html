@@ -111,9 +111,11 @@
     </div>
 
     <div id="sheet" class="overlay" hidden>
-      <div class="card wide">
-        <button id="sheetX" class="close" type="button" aria-label="Close"><svg><use href="#i-x"/></svg></button>
-        <h1 id="sheetTitle">Setup &amp; help</h1>
+      <div class="card wide sheet-card">
+        <div class="sheet-head">
+          <h1 id="sheetTitle">Setup &amp; help</h1>
+          <button id="sheetX" class="close" type="button" aria-label="Close"><svg><use href="#i-x"/></svg></button>
+        </div>
         <div id="sheetBody" class="prose"></div>
       </div>
     </div>
@@ -133,7 +135,7 @@
   </main>
 
   <input id="romInput" type="file" accept=".nds,.zip,.7z,.rar,.srl,.dsi" hidden>
-  <input id="biosInput" type="file" accept=".bin,.zip,.7z,.rar" hidden>
+  <input id="biosInput" type="file" accept=".bin,.zip,.7z,.rar" multiple hidden>
 </div>
 
 <script src="app.js"></script>

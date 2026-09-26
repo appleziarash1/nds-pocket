@@ -127,6 +127,18 @@ body.pad-on .ejs_menu_bar{bottom:118px}
 .card.slim{max-width:360px;text-align:center}
 .card.wide{max-width:620px;max-height:calc(100% - 8px);overflow:auto}
 
+/* Help sheet: keep the title and close button pinned while the body scrolls.
+   On iPhone there is no Escape key, so a close button that scrolled away would
+   leave no way out of the sheet. */
+.sheet-card.card.wide{padding:0;display:flex;flex-direction:column;overflow:hidden}
+.sheet-head{
+  position:sticky;top:0;z-index:1;display:flex;align-items:center;gap:12px;
+  padding:18px 22px 12px;background:var(--panel);border-bottom:1px solid var(--line);
+}
+.sheet-head h1{margin-bottom:0;flex:1}
+.sheet-card .close{position:static;flex:0 0 auto}
+.sheet-card .prose{padding:16px 22px 22px;overflow:auto;flex:1 1 auto;min-height:0;-webkit-overflow-scrolling:touch}
+
 .logo{display:flex;justify-content:center;color:var(--accent);margin-bottom:10px}
 .logo svg{width:72px;height:50px}
 

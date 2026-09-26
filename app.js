@@ -63,6 +63,17 @@
   let booted = false;
   let stick = null;
   let biosFiles = [];
+  // EmulatorJS treats EJS_biosUrl as a URL string and calls .split("/") on it, so
+  // a raw File would throw inside a promise that never settles and hang the boot.
+  // Hand it a blob: URL instead, and revoke it once the core has read the bytes.
+  let biosBlobUrl = "";
+  async function makeBiosUrl() {
+    if (biosBlobUrl) { try { URL.revokeObjectURL(biosBlobUrl); } catch { /* already gone */ } biosBlobUrl = ""; }
+    if (!biosFiles.length) return "";
+    const payload = await biosPayload();
+    biosBlobUrl = URL.createObjectURL(payload);
+    return biosBlobUrl;
+  }
   let ejecting = false;
   let bootWatchdog = 0;
 
@@ -259,7 +270,7 @@
     // Keep big ROMs out of the browser cache; re-picking a file is cheap and this
     // avoids blowing the storage quota on iOS.
     window.EJS_CacheLimit = 0;
-    window.EJS_biosUrl = biosFiles.length ? biosFiles[0] : "";
+    window.EJS_biosUrl = await makeBiosUrl();
 
     ensureEmulatorStyles();
 
@@ -325,6 +336,7 @@
     emulator = null;
     booted = false;
     window.EJS_emulator = null;
+    if (biosBlobUrl) { try { URL.revokeObjectURL(biosBlobUrl); } catch { /* already gone */ } biosBlobUrl = ""; }
     if (padObserver) { padObserver.disconnect(); padObserver = null; }
     destroyStick();
     el.game.replaceChildren();
@@ -416,7 +428,8 @@
       <tr><td>L / R</td><td>Top corners</td><td><kbd>Q</kbd> / <kbd>E</kbd></td></tr>
       <tr><td>Start / Select</td><td>Centre</td><td><kbd>Enter</kbd> / <kbd>V</kbd></td></tr>
     </table>
-    <p>Touch the lower screen directly to use the DS touchscreen. A USB or Bluetooth controller is picked up automatically — the emulator menu shows a gamepad badge once one connects.</p>
+    <p>The DS touchscreen is the right-hand panel. Tap it directly — the left panel is the top screen and ignores taps.</p>
+    <p>A wired or Bluetooth controller is picked up automatically. On-screen buttons only appear for pads you have not connected, so a physical controller stays in charge.</p>
 
     <h2>On-screen controls</h2>
     <ul>
@@ -426,17 +439,17 @@
     </ul>
 
     <h2>Screen layout</h2>
-    <p>Both DS screens are shown side by side, which suits landscape. To change it, open the emulator menu (the small handle at the bottom centre) → <b>Backend Core Options</b> → <b>Screen Layout</b>. "Top/Bottom" stacks them if you prefer.</p>
+    <p>Both DS screens are shown side by side, which suits landscape. To change it, open the emulator menu (the small handle at the bottom centre) → <b>Backend Core Options</b> → <b>melonds screen layout</b>. "Top/Bottom" stacks them if you prefer.</p>
 
     <h2>BIOS (optional)</h2>
-    <p>The default core boots games without a BIOS. If a title misbehaves, tap <b>Add NDS BIOS</b> and supply <code>bios7.bin</code>, <code>bios9.bin</code> and <code>firmware.bin</code> — zipped together is fine. They're stored in this browser only.</p>
+    <p>The default core boots games without a BIOS, so skip this unless a title misbehaves. To add one, tap <b>Add NDS BIOS</b> and pick <code>bios7.bin</code>, <code>bios9.bin</code> and <code>firmware.bin</code> — you can select all three at once, or drop in a <code>.zip</code> that already contains them. They're kept in this browser only and are cleared when you eject.</p>
 
     <h2>Install as an app</h2>
     <p>On iPhone: <b>Share → Add to Home Screen</b>, then launch it and rotate to landscape. On desktop Chrome or Edge, use the install icon in the address bar.</p>
 
     <h2>If a game won't boot</h2>
     <ul>
-      <li>Try the emulator menu → <b>Core</b> and switch to <b>desmume</b> or <b>desmume2015</b>. Some titles prefer a specific core.</li>
+      <li>Try the emulator menu → <b>Core (Requires restart)</b> and switch to <b>desmume</b> or <b>desmume2015</b>, then reload. Some titles prefer a specific core.</li>
       <li>Make sure the file is really a DS ROM (<code>.nds</code>), not a GBA or 3DS image.</li>
       <li>Very large ROMs take a few seconds to copy into memory — the loading bar will tell you.</li>
     </ul>
@@ -449,7 +462,7 @@
   const ROM_EXT = /\.(nds|srl|dsi)$/i;
   const ARCHIVE_EXT = /\.(zip|7z|rar)$/i;
 
-  function acceptRom(file) {
+  async function acceptRom(file) {
     if (!file) return;
     const ok = ROM_EXT.test(file.name) || ARCHIVE_EXT.test(file.name);
     if (!ok) {
@@ -504,13 +517,87 @@
   function wireBios() {
     el.btnBios.addEventListener("click", () => el.biosInput.click());
     el.biosInput.addEventListener("change", () => {
-      biosFiles = Array.from(el.biosInput.files || []);
+      const picked = Array.from(el.biosInput.files || []);
       el.biosInput.value = "";
-      if (!biosFiles.length) return;
-      const label = biosFiles.length === 1 ? biosFiles[0].name : biosFiles.length + " files";
+      // Cancelling the dialog fires a change event with no files. Keep the
+      // previously chosen BIOS instead of silently dropping it.
+      if (!picked.length) return;
+      biosFiles = picked;
+      const label = picked.length === 1 ? picked[0].name : picked.length + " files";
       el.btnBios.textContent = "BIOS: " + label;
       el.btnBios.style.color = "var(--ok)";
     });
+  }
+
+  /* ---------------- BIOS packing ---------------- */
+
+  // EmulatorJS writes the BIOS under the file name it sees, and the NDS core only
+  // looks for bios7.bin / bios9.bin / firmware.bin. A single file handed over as a
+  // blob URL keeps its blob UUID instead of its name, so the core would never find
+  // it. Zipping preserves the names, which is what the emulator actually unpacks.
+  function crc32(bytes) {
+    let c, crc = 0xffffffff;
+    for (let i = 0; i < bytes.length; i++) {
+      c = (crc ^ bytes[i]) & 0xff;
+      for (let k = 0; k < 8; k++) c = c & 1 ? (c >>> 1) ^ 0xedb88320 : c >>> 1;
+      crc = (crc >>> 8) ^ c;
+    }
+    return (crc ^ 0xffffffff) >>> 0;
+  }
+
+  function zipStore(entries) {
+    const enc = new TextEncoder();
+    const parts = [], central = [];
+    let offset = 0;
+    for (const { name, data } of entries) {
+      const nameBytes = enc.encode(name);
+      const crc = crc32(data);
+      const local = new Uint8Array(30 + nameBytes.length);
+      const lv = new DataView(local.buffer);
+      lv.setUint32(0, 0x04034b50, true);   // local file header
+      lv.setUint16(4, 20, true);           // version needed
+      lv.setUint16(6, 0x0800, true);       // UTF-8 names
+      lv.setUint16(8, 0, true);            // stored, no compression
+      lv.setUint32(14, crc, true);
+      lv.setUint32(18, data.length, true);
+      lv.setUint32(22, data.length, true);
+      lv.setUint16(26, nameBytes.length, true);
+      local.set(nameBytes, 30);
+      parts.push(local, data);
+
+      const cd = new Uint8Array(46 + nameBytes.length);
+      const cv = new DataView(cd.buffer);
+      cv.setUint32(0, 0x02014b50, true);   // central directory header
+      cv.setUint16(4, 20, true);
+      cv.setUint16(6, 20, true);
+      cv.setUint16(8, 0x0800, true);
+      cv.setUint16(10, 0, true);
+      cv.setUint32(16, crc, true);
+      cv.setUint32(20, data.length, true);
+      cv.setUint32(24, data.length, true);
+      cv.setUint16(28, nameBytes.length, true);
+      cv.setUint32(42, offset, true);
+      cd.set(nameBytes, 46);
+      central.push(cd);
+      offset += local.length + data.length;
+    }
+    const cdSize = central.reduce((n, c) => n + c.length, 0);
+    const end = new Uint8Array(22);
+    const ev = new DataView(end.buffer);
+    ev.setUint32(0, 0x06054b50, true);     // end of central directory
+    ev.setUint16(8, entries.length, true);
+    ev.setUint16(10, entries.length, true);
+    ev.setUint32(12, cdSize, true);
+    ev.setUint32(16, offset, true);
+    return new Blob([...parts, ...central, end], { type: "application/zip" });
+  }
+
+  async function biosPayload() {
+    const files = biosFiles;
+    if (files.length === 1 && /\.(zip|7z|rar)$/i.test(files[0].name)) return files[0];
+    const entries = [];
+    for (const f of files) entries.push({ name: f.name, data: new Uint8Array(await f.arrayBuffer()) });
+    return zipStore(entries);
   }
 
   /* ---------------- on-screen controls ---------------- */
@@ -724,6 +811,8 @@
     el.btnEject.addEventListener("click", eject);
     el.btnAbout.addEventListener("click", () => openSheet("Setup & help", HELP_HTML));
     el.sheetX.addEventListener("click", closeSheet);
+    // Tapping the dimmed backdrop closes the sheet, so the X is not the only way out.
+    el.sheet.addEventListener("click", (e) => { if (e.target === el.sheet) closeSheet(); });
     el.loadRetry.addEventListener("click", () => { hideLoad(); pickRom(); });
 
     window.addEventListener("keydown", (e) => {
