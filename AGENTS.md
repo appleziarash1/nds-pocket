@@ -150,6 +150,13 @@ The floating pad listens for **pointer** events *and* **touch** events. Safari h
 historically delivered only touch, so both are bound and whichever arrives first wins.
 Test with `page.touchscreen.tap` / `page.mouse`, or synthetic `PointerEvent`s.
 
+Note that `#stick` is positioned with `left`/`top` inside `#game`, so its ring centre
+is in *stage* coordinates. `update()` must subtract the stage origin before comparing
+against that centre — passing raw `clientX/clientY` offsets every reading by the
+header height, which is past both the dead zone and the 52 px travel limit, so the
+stick reads one direction and never releases. Verify by pressing at a known point and
+checking the ring and knob land on it.
+
 ## Canvas geometry and the letterbox bands
 
 The melonDS core sizes its GL viewport from the canvas *element* box and then fits
@@ -168,6 +175,21 @@ EmulatorJS' `.ejs_virtualGamepad_left/right` are full-height containers and its
 stylesheet re-enables `pointer-events` on them, so both the parent *and* the clusters
 must be set to `none` for the floating pad's touches to land. Only
 `.ejs_virtualGamepad_button` and the d-pad keep `auto`.
+
+## Letterbox fill and the stage bottom edge
+
+The bands are fed by a frame captured from the core. That URL lives in a CSS custom
+property, so it must **not** be revoked on load: revoking leaves `--frame-blur`
+pointing at a dead blob and the bands silently fall back to the flat colour (a `new
+Image()` on the property value then reports `onerror`). Keep the newest URL and revoke
+the previous one when replacing it.
+
+`#app` carries the bottom safe-area inset so the header clears the home indicator, but
+the stage pulls it back out with a negative `margin-bottom`. Without that the game stops
+21 px short of the bottom edge on a notched phone, leaving a strip of page background
+under it; the controls already offset themselves by `--safe-b`. Check by sampling the
+last rows of a screenshot: the strip is `#0b1016`, while the stage under it shows the
+frame fill.
 
 ## Autosave
 

@@ -497,6 +497,7 @@
   // comes from the core instead. This is ambience rather than a live mirror: one
   // good frame is enough, and a failed capture just leaves the backdrop colour.
   let frameCaptured = false;
+  let frameBlobUrl = "";
 
   function captureFrame() {
     if (frameCaptured || !emulator || !emulator.gameManager) return;
@@ -508,8 +509,12 @@
       const url = URL.createObjectURL(new Blob([buf], { type: "image/png" }));
       const img = new Image();
       img.onload = () => {
+        // The URL is referenced by a CSS custom property, so it has to stay alive;
+        // revoking it here leaves the property pointing at a dead blob and the
+        // bands fall back to the plain colour. Keep the newest one instead.
+        if (frameBlobUrl) URL.revokeObjectURL(frameBlobUrl);
+        frameBlobUrl = url;
         document.documentElement.style.setProperty("--frame-blur", `url("${url}")`);
-        URL.revokeObjectURL(url);
       };
       img.onerror = () => { URL.revokeObjectURL(url); frameCaptured = false; };
       img.src = url;
@@ -812,8 +817,14 @@
     };
 
     const update = (clientX, clientY) => {
-      let dx = clientX - baseX;
-      let dy = clientY - baseY;
+      // The ring is positioned inside the stage, so compare in stage coordinates.
+      // Using viewport coordinates here would offset every reading by the stage
+      // origin (the header height) and pin the stick against its travel limit.
+      const stage = el.stage.getBoundingClientRect();
+      const x = clientX - stage.left;
+      const y = clientY - stage.top;
+      let dx = x - baseX;
+      let dy = y - baseY;
 
       // Let the base chase the thumb so the stick never runs out of travel.
       const roam = Math.hypot(dx, dy);
@@ -823,8 +834,8 @@
         baseY += (dy / roam) * pull;
         wrap.style.left = baseX + "px";
         wrap.style.top = baseY + "px";
-        dx = clientX - baseX;
-        dy = clientY - baseY;
+        dx = x - baseX;
+        dy = y - baseY;
       }
 
       const dist = Math.hypot(dx, dy);

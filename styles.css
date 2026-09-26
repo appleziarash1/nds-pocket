@@ -93,7 +93,11 @@ body{
 
 /* ---------- stage ---------- */
 
-#stage{position:relative;flex:1 1 auto;min-height:0;background:#05080b}
+/* The app carries the bottom safe-area inset so the header and its buttons clear the
+   home indicator, but the stage must not: it pulls the inset back out so the game
+   reaches the screen edge instead of leaving a strip of page background below it.
+   The controls keep their own inset offsets, so they stay clear of the indicator. */
+#stage{position:relative;flex:1 1 auto;min-height:0;margin-bottom:calc(-1 * var(--safe-b));background:#05080b}
 
 #game{position:absolute;inset:0}
 #game .ejs_parent{background:#05080b}
