@@ -54,8 +54,16 @@ code=$(api -o /tmp/ndsp_pages.json -w '%{http_code}' -X POST \
   "https://api.github.com/repos/$OWNER/$REPO/pages" \
   -d "{\"source\":{\"branch\":\"$BRANCH\",\"path\":\"/\"}}")
 if [ "$code" = "409" ]; then
-  api -X PUT "https://api.github.com/repos/$OWNER/$REPO/pages" \
-    -d "{\"source\":{\"branch\":\"$BRANCH\",\"path\":\"/\"}}" >/dev/null
+  code=$(api -o /tmp/ndsp_pages.json -w '%{http_code}' -X PUT \
+    "https://api.github.com/repos/$OWNER/$REPO/pages" \
+    -d "{\"source\":{\"branch\":\"$BRANCH\",\"path\":\"/\"}}")
+fi
+if [ "$code" = "201" ] || [ "$code" = "204" ]; then
+  echo "    Pages enabled"
+else
+  echo "    Pages not enabled (HTTP $code) — the token lacks Pages permission."
+  echo "    Turn it on once by hand: Settings -> Pages -> Source: $BRANCH / (root)"
+  echo "    https://github.com/$OWNER/$REPO/settings/pages"
 fi
 
 echo
