@@ -160,7 +160,17 @@
     w.EJS_pathtodata = EJS_DATA;
     w.EJS_startOnLoaded = true;
     w.EJS_volume = 0.7;
-    w.EJS_threads = typeof SharedArrayBuffer === "function";
+    // Threaded cores are the documented source of rendering trouble on Apple
+    // mobile: the worker-backed melonDS build is what painted partial or blank
+    // frames on iPhone. The service worker makes the page cross-origin isolated,
+    // which exposes SharedArrayBuffer, so EmulatorJS would otherwise pick the
+    // threaded build on a phone by default. Desktop keeps the faster build, and
+    // the in-game Core Options menu can still turn threads back on by hand.
+    // iPadOS reports a desktop UA, so touch capability has to be checked too.
+    const ua = navigator.userAgent || "";
+    const appleMobile = /iPhone|iPad|iPod/.test(ua)
+      || (/Mac/.test(navigator.platform || "") && navigator.maxTouchPoints > 1);
+    w.EJS_threads = !appleMobile && typeof SharedArrayBuffer === "function";
     w.EJS_defaultOptions = { melonds_screen_layout: "Left/Right" };
     // D-pad on WASD. EmulatorJS replaces the whole scheme when this is set, so
     // it mirrors the built-in nds map with two changes: the arrows become WASD,
@@ -213,12 +223,14 @@
       applyBarHidden(settings.barHidden, true);
       lockLandscape();
       updateOrientation();
+      guardScreenLayout();
     };
     w.EJS_onGameStart = () => {
       hideLoad();
       el.brandDot.classList.add("live");
       lockLandscape();
       updateOrientation();
+      guardScreenLayout();
     };
   }
 
@@ -409,6 +421,23 @@
     window.addEventListener("resize", updateOrientation);
     window.addEventListener("orientationchange", updateOrientation);
     updateOrientation();
+  }
+
+  // EmulatorJS only reads EJS_defaultOptions when it has no saved settings for the
+  // game, so a layout stored during an earlier session keeps overriding the
+  // side-by-side default. A stacked frame (256x384) fitted into a landscape stage
+  // fills roughly a quarter of its width, leaving black either side - the "half
+  // game, half black" players reported. Re-assert the layout once the core is up
+  // and refit the canvas, so the frame is right on every load, not just the first.
+  function guardScreenLayout() {
+    if (!emulator || typeof emulator.changeSettingOption !== "function") return;
+    let current = null;
+    try { current = emulator.getSettingValue("melonds_screen_layout"); } catch { /* menu not built yet */ }
+    if (current === "Left/Right") return;
+    emulator.changeSettingOption("melonds_screen_layout", "Left/Right");
+    requestAnimationFrame(() => {
+      if (emulator && emulator.handleResize) emulator.handleResize();
+    });
   }
 
   // Safari on iPhone exposes no element-level fullscreen at all: neither

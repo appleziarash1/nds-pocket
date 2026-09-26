@@ -67,6 +67,27 @@ real debugging time.
   `Core (Requires restart)`. Help text must match these exactly.
 - With `melonds_screen_layout: "Left/Right"` the canvas is ~2.4:1 (two panels side
   by side). The DS touchscreen is the right-hand panel.
+- `EJS_defaultOptions` is only consulted when there are **no saved settings** for
+  the game. `getCoreSettings()` in `emulator.js` writes the saved blob first and
+  appends defaults only for keys not already present, so a layout stored during an
+  earlier session silently wins over the default on every later load. That is what
+  produced the "half game, half black" report: the core ran its own `Top/Bottom`
+  default (256x384, ~1.5:1 portrait) and the fitter left black either side of a
+  landscape stage. `guardScreenLayout()` re-asserts `Left/Right` from
+  `EJS_ready`/`EJS_onGameStart` and refits the canvas, so the frame is right on
+  every load rather than only the first. It re-asserts instead of writing
+  localStorage because `changeSettingOption` is the same path the settings menu
+  uses, and it no-ops when the layout is already correct.
+- Threaded cores are a rendering risk on Apple mobile. The service worker's
+  COOP/COEP headers make the page cross-origin isolated, which exposes
+  `SharedArrayBuffer`, so `EJS_threads` would otherwise be true on iPhone and pull
+  the `melonds-thread` build. `app.js` keeps threads for desktop and turns them off
+  for Apple mobile (`iPhone|iPad|iPod` in the UA, plus a `MacIntel` platform with
+  `maxTouchPoints > 1` for iPadOS, which reports a desktop UA). EmulatorJS still
+  offers a Threads toggle in Core Options, so this is a default, not a lock.
+- A suppressed `EJS_defaultOptions` is the quickest way to reproduce the stacked
+  layout for testing: `Object.defineProperty(window, 'EJS_defaultOptions', {get: () =>
+  undefined, set: () => {}})` in an init script. `/tmp/regress.py` uses it.
 - The melonds core's own `b_speed_fast` / `b_speed_slow` buttons sit flush against
   the bottom edge and can measure a few px off screen. That is cosmetic, not a bug.
 
