@@ -20,11 +20,12 @@
     brandDot: document.querySelector(".brand .dot"),
     btnRom: $("btnRom"),
     btnEject: $("btnEject"),
-    btnMenu: $("btnMenu"),
     btnScheme: $("btnScheme"),
     schemeLabel: $("schemeLabel"),
     btnPad: $("btnPad"),
     padLabel: $("padLabel"),
+    btnBar: $("btnBar"),
+    barLabel: $("barLabel"),
     btnFull: $("btnFull"),
     btnExitFull: $("btnExitFull"),
     opacityWrap: $("opacityWrap"),
@@ -33,6 +34,7 @@
 
     stage: $("stage"),
     game: $("game"),
+    gameBar: $("gameBar"),
 
     boot: $("boot"),
     drop: $("drop"),
@@ -57,7 +59,7 @@
   };
 
   const settings = Object.assign(
-    { padOpacity: 0.7, scheme: "stick", padHidden: false },
+    { padOpacity: 0.7, scheme: "stick", padHidden: false, barHidden: false },
     readSettings()
   );
 
@@ -207,6 +209,8 @@
       setScheme(settings.scheme, true);
       applyOpacity(settings.padOpacity, true);
       applyPadHidden(settings.padHidden, true);
+      adoptGameBar();
+      applyBarHidden(settings.barHidden, true);
       lockLandscape();
       updateOrientation();
     };
@@ -283,9 +287,9 @@
       tagEmulatorScripts();
       booted = true;
       el.btnEject.hidden = false;
-      el.btnMenu.hidden = false;
       el.btnScheme.hidden = false;
       el.btnPad.hidden = false;
+      el.btnBar.hidden = false;
       el.btnFull.hidden = false;
       el.opacityWrap.hidden = false;
       showLoad("Loading", "Starting emulation…", 45);
@@ -343,9 +347,10 @@
     destroyStick();
     el.game.replaceChildren();
     document.body.classList.remove("pad-on");
+    document.body.classList.remove("menu-off");
     setFallbackFullscreen(false);
     el.brandDot.classList.remove("live");
-    ["btnEject", "btnMenu", "btnScheme", "btnPad", "btnFull"].forEach((k) => { el[k].hidden = true; });
+    ["btnEject", "btnScheme", "btnPad", "btnBar", "btnFull"].forEach((k) => { el[k].hidden = true; });
     el.opacityWrap.hidden = true;
   }
 
@@ -463,8 +468,11 @@
       <li><b>Stick / D-pad</b> switches the left control between an analog thumbstick and a classic D-pad.</li>
     </ul>
 
+    <h2>In-game controls</h2>
+    <p>Restart, pause, save states, settings and the rest live in the top bar, to the right of the buttons above — they no longer float over the game. Scroll the bar sideways if your screen is narrow, and use <b>Bar on/off</b> to hide it when you want nothing on screen.</p>
+
     <h2>Screen layout</h2>
-    <p>Both DS screens are shown side by side, which suits landscape. To change it, open the emulator menu (the small handle at the bottom centre) → <b>Backend Core Options</b> → <b>melonds screen layout</b>. "Top/Bottom" stacks them if you prefer.</p>
+    <p>Both DS screens are shown side by side, which suits landscape. To change it, open <b>Settings</b> in the in-game bar at the top → <b>Backend Core Options</b> → <b>melonds screen layout</b>. "Top/Bottom" stacks them if you prefer.</p>
 
     <h2>BIOS (optional)</h2>
     <p>The default core boots games without a BIOS, so skip this unless a title misbehaves. To add one, tap <b>Add NDS BIOS</b> and pick <code>bios7.bin</code>, <code>bios9.bin</code> and <code>firmware.bin</code> — you can select all three at once, or drop in a <code>.zip</code> that already contains them. They're kept in this browser only and are cleared when you eject.</p>
@@ -788,6 +796,26 @@
     if (!quiet) writeSettings();
   }
 
+  // EmulatorJS floats its control bar over the game and auto-shows it on a 3s
+  // timer from start(). Both are wrong for this layout: the bar would cover the
+  // touchscreen, and on a phone it would pop in and out under a moving thumb. So
+  // the bar is adopted into the header, and its own show/hide state is ignored in
+  // favour of a plain toggle the player controls.
+  function adoptGameBar() {
+    const bar = el.game && el.game.querySelector(".ejs_menu_bar");
+    if (!bar || !el.gameBar) return;
+    el.gameBar.appendChild(bar);
+    el.btnBar.hidden = false;
+  }
+
+  function applyBarHidden(hidden, quiet) {
+    settings.barHidden = hidden;
+    document.body.classList.toggle("menu-off", hidden);
+    el.btnBar.classList.toggle("on", !hidden);
+    el.barLabel.textContent = hidden ? "Bar off" : "Bar on";
+    if (!quiet) writeSettings();
+  }
+
   function applyPadHidden(hidden, quiet) {
     settings.padHidden = hidden;
     document.body.classList.toggle("pad-off", hidden);
@@ -804,9 +832,7 @@
   }
 
   function wireControls() {
-    el.btnMenu.addEventListener("click", () => {
-      if (emulator && emulator.menu) emulator.menu.toggle();
-    });
+    el.btnBar.addEventListener("click", () => applyBarHidden(!settings.barHidden));
 
     el.btnScheme.addEventListener("click", () => {
       setScheme(settings.scheme === "stick" ? "dpad" : "stick");
@@ -874,6 +900,7 @@
     wireOrientation();
     applyOpacity(settings.padOpacity, true);
     applyPadHidden(settings.padHidden, true);
+    applyBarHidden(settings.barHidden, true);
     reportEnvironment();
     // Eject reloads the page; keep the picker up and stay in landscape.
     try {
