@@ -15,6 +15,7 @@
   const $ = (id) => document.getElementById(id);
 
   const el = {
+    app: $("app"),
     bar: $("bar"),
     brandDot: document.querySelector(".brand .dot"),
     btnRom: $("btnRom"),
@@ -25,6 +26,7 @@
     btnPad: $("btnPad"),
     padLabel: $("padLabel"),
     btnFull: $("btnFull"),
+    btnExitFull: $("btnExitFull"),
     opacityWrap: $("opacityWrap"),
     opacity: $("opacity"),
     opacityOut: $("opacityOut"),
@@ -341,6 +343,7 @@
     destroyStick();
     el.game.replaceChildren();
     document.body.classList.remove("pad-on");
+    setFallbackFullscreen(false);
     el.brandDot.classList.remove("live");
     ["btnEject", "btnMenu", "btnScheme", "btnPad", "btnFull"].forEach((k) => { el[k].hidden = true; });
     el.opacityWrap.hidden = true;
@@ -403,6 +406,28 @@
     updateOrientation();
   }
 
+  // Safari on iPhone exposes no element-level fullscreen at all: neither
+  // requestFullscreen nor webkitRequestFullscreen exists on an ordinary element,
+  // and document.fullscreenEnabled stays unusable there. So the only trustworthy
+  // test is whether the element itself carries one of the methods.
+  function fullscreenFn(node) {
+    return node && (node.requestFullscreen || node.webkitRequestFullscreen || node.mozRequestFullScreen || node.msRequestFullscreen);
+  }
+
+  let fallbackFullscreen = false;
+
+  function setFallbackFullscreen(on) {
+    fallbackFullscreen = on;
+    el.app.classList.toggle("pseudo-full", on);
+    el.btnExitFull.hidden = !on;
+    const label = el.btnFull.querySelector("span");
+    if (label) label.textContent = on ? "Exit" : "Full";
+    el.btnFull.classList.toggle("on", on);
+    // The stage just changed size, so let the emulator re-fit its canvas.
+    if (emulator && emulator.handleResize) requestAnimationFrame(() => emulator.handleResize());
+    lockLandscape();
+  }
+
   function lockLandscape() {
     if (screen.orientation && screen.orientation.lock) {
       screen.orientation.lock("landscape").catch(() => { /* iOS has no lock */ });
@@ -446,6 +471,9 @@
 
     <h2>Install as an app</h2>
     <p>On iPhone: <b>Share → Add to Home Screen</b>, then launch it and rotate to landscape. On desktop Chrome or Edge, use the install icon in the address bar.</p>
+
+    <h2>Full screen</h2>
+    <p><b>Full</b> in the top bar hides the toolbar so the game fills the screen. Tap the small <b>×</b> that appears in the corner to come back, or press <kbd>Esc</kbd> on a keyboard.</p>
 
     <h2>If a game won't boot</h2>
     <ul>
@@ -791,15 +819,26 @@
     el.btnFull.addEventListener("click", () => {
       if (!emulator) return;
       if (document.fullscreenElement) {
-        document.exitFullscreen && document.exitFullscreen();
-      } else if (emulator.elements && emulator.elements.parent) {
-        const p = emulator.elements.parent;
-        (p.requestFullscreen || p.webkitRequestFullscreen || p.mozRequestFullScreen || p.msRequestFullscreen)
-          .call(p).catch(() => { /* user denied */ });
-        // Fullscreen is a user gesture, so this is the one moment a landscape
-        // lock is likely to be honoured on Android. iOS has no lock at all.
-        lockLandscape();
+        if (document.exitFullscreen) document.exitFullscreen().catch(() => { /* already out */ });
+        return;
       }
+      const p = emulator.elements && emulator.elements.parent;
+      const fn = fullscreenFn(p);
+      if (fn) {
+        // .call() is the call site that throws when the method is missing, so the
+        // function must be checked before it is invoked, not caught after. The
+        // prefix may also be a different one than the unprefixed exit call uses.
+        try {
+          Promise.resolve(fn.call(p)).catch(() => setFallbackFullscreen(true));
+        } catch {
+          setFallbackFullscreen(true);
+        }
+        lockLandscape();
+        return;
+      }
+      // iPhone Safari has no element fullscreen at all, so hide the shell chrome
+      // instead. Same visual result, and it still leaves landscape untouched.
+      setFallbackFullscreen(!fallbackFullscreen);
     });
 
     document.addEventListener("fullscreenchange", () => {
@@ -807,6 +846,8 @@
         try { screen.orientation.unlock(); } catch { /* unsupported */ }
       }
     });
+
+    el.btnExitFull.addEventListener("click", () => setFallbackFullscreen(false));
 
     el.btnEject.addEventListener("click", eject);
     el.btnAbout.addEventListener("click", () => openSheet("Setup & help", HELP_HTML));
@@ -816,7 +857,9 @@
     el.loadRetry.addEventListener("click", () => { hideLoad(); pickRom(); });
 
     window.addEventListener("keydown", (e) => {
-      if (e.key === "Escape" && !el.sheet.hidden) closeSheet();
+      if (e.key !== "Escape") return;
+      if (!el.sheet.hidden) { closeSheet(); return; }
+      if (fallbackFullscreen) setFallbackFullscreen(false);
     });
   }
 
