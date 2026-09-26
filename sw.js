@@ -6,7 +6,10 @@
    2. Cache the app shell so the site opens offline. Emulator cores come from the
       CDN and are cached opportunistically as they are used. */
 
-const VERSION = "v1";
+// Bump this whenever index.html, styles.css or app.js change. Shell assets are
+// served cache-first, so without a bump a returning visitor gets the new HTML
+// with the old scripts still cached.
+const VERSION = "v2";
 const SHELL = `ndspocket-shell-${VERSION}`;
 const RUNTIME = `ndspocket-runtime-${VERSION}`;
 
@@ -88,8 +91,34 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Cache first, refresh in the background: cores are immutable per release and
-  // the shell assets are tiny, so a stale-while-revalidate read is a good fit.
+  // App shell: network first, like navigations. Cache-first would hand a returning
+  // visitor the previous deploy's scripts alongside the new index.html, and a mix
+  // like that throws when a script changed shape. The shell is a handful of tiny
+  // files, so the round trip is not worth the risk.
+  //
+  // index.html requests these with a ?v= cache-busting query so that even a client
+  // still controlled by an older worker fetches the new file — an older worker's
+  // cache lookup keys on the full URL, so the query is what misses it. The offline
+  // fallback therefore matches ignoring the query, or it would never hit.
+  const isShell = sameOrigin && SHELL_ASSETS.some((u) => new URL(u, self.location.href).pathname === url.pathname);
+  if (isShell) {
+    event.respondWith(
+      fetch(request)
+        .then((res) => {
+          if (res && res.status === 200 && res.type === "basic") {
+            const copy = res.clone();
+            caches.open(SHELL).then((c) => c.put(request, copy)).catch(() => {});
+          }
+          return withHeaders(res, CORP);
+        })
+        .catch(() => caches.match(request, { ignoreSearch: true })
+          .then((r) => (r ? withHeaders(r, CORP) : Response.error())))
+    );
+    return;
+  }
+
+  // Cache first, refresh in the background: cores are immutable per release, so a
+  // stale-while-revalidate read is a good fit.
   event.respondWith(
     Promise.resolve(caches.match(request)).then((hit) => {
       const network = fetch(request)

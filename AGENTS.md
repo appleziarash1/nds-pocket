@@ -14,6 +14,39 @@ EmulatorJS is loaded from CDN (`loader.js`, `emulator.js`). NDS cores: `melonds`
 Pushing to `main` publishes via GitHub Pages. Verify live with the test harnesses
 in `/tmp` (see below) pointed at the live URL, not just localhost.
 
+### Shipping a change without breaking returning visitors
+
+The service worker caches the app shell, and GitHub Pages sends no cache headers,
+so a deploy has to actively push past it. Two things are needed, and neither alone
+is enough:
+
+- **Bump `VERSION` in `sw.js`.** The new worker's `activate` deletes the previous
+  version's caches. Without it the old shell survives the deploy.
+- **Bump the `?v=` query on `styles.css` and `app.js` in `index.html`.** This is
+  the part that matters. A visitor's *first* request after a deploy is still
+  handled by the old worker, which serves shell assets cache-first — so they would
+  get the new HTML with the previous `app.js`. Cache-first lookup keys on the full
+  URL, so the changed query is what misses the cache and reaches the network.
+
+That second point is not theoretical: it was caught by `swupgrade.js`, which serves
+the previous commit, lets its worker install, then swaps in the working tree. The
+skew threw `Cannot read properties of null (reading 'addEventListener')` from
+`wireControls` — the old `app.js` calling `el.btnMenu.addEventListener` on HTML
+that no longer had that button. Note the throw aborts the rest of `init()`, so the
+symptom is a page that looks half-dead rather than one obviously broken.
+
+Both mechanisms live outside `app.js` on purpose: a fix *in* `app.js` cannot help,
+because the stale script is exactly what is running. Don't try to paper over the
+skew with a `controllerchange` reload — the code doing the reloading is the code
+that failed to load. Bumping the query string makes the first load correct, with
+no reload.
+
+`sw.js`'s shell branch is network-first and its offline fallback matches with
+`ignoreSearch: true`, because the versioned request never equals the precached
+entry otherwise. `offline.js` guards that.
+
+Run `node /tmp/swupgrade.js <previous-ref>` after changing any shell asset.
+
 ## EmulatorJS integration notes
 
 These are non-obvious behaviours discovered by reading `emulator.js`; they cost
