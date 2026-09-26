@@ -31,9 +31,12 @@
     opacityWrap: $("opacityWrap"),
     opacity: $("opacity"),
     opacityOut: $("opacityOut"),
+    btnAutoSave: $("btnAutoSave"),
+    autoLabel: $("autoLabel"),
 
     stage: $("stage"),
     game: $("game"),
+    padZone: $("padZone"),
     gameBar: $("gameBar"),
 
     boot: $("boot"),
@@ -59,7 +62,7 @@
   };
 
   const settings = Object.assign(
-    { padOpacity: 0.7, scheme: "stick", padHidden: false, barHidden: false },
+    { padOpacity: 0.7, scheme: "stick", padHidden: false, barHidden: false, autoSave: true },
     readSettings()
   );
 
@@ -224,6 +227,7 @@
       lockLandscape();
       updateOrientation();
       guardScreenLayout();
+      fitCanvasSoon();
     };
     w.EJS_onGameStart = () => {
       hideLoad();
@@ -231,6 +235,11 @@
       lockLandscape();
       updateOrientation();
       guardScreenLayout();
+      fitCanvasSoon();
+      startAutoSave();
+      // Loading a state mid-boot fights the BIOS handshake, so let the core settle
+      // first. A missing or stale state simply leaves the game at its own start.
+      if (settings.autoSave) setTimeout(autoLoad, 2500);
     };
   }
 
@@ -285,6 +294,10 @@
 
     window.EJS_gameUrl = file;
     window.EJS_gameName = (file.name || "game").replace(/\.[^.]+$/, "");
+    autoSlug = slugFor(file.name);
+    // A previous session may have turned autosave off, in which case the state it
+    // left behind must not come back now that the slug is known.
+    if (!settings.autoSave) dropAutoState();
     // Keep big ROMs out of the browser cache; re-picking a file is cheap and this
     // avoids blowing the storage quota on iOS.
     window.EJS_CacheLimit = 0;
@@ -304,6 +317,7 @@
       el.btnBar.hidden = false;
       el.btnFull.hidden = false;
       el.opacityWrap.hidden = false;
+      el.btnAutoSave.hidden = false;
       showLoad("Loading", "Starting emulation…", 45);
       // EJS_ready / EJS_onGameStart drive the rest of the progress UI. If a core
       // rejects the ROM it only paints "Failed to start game" inside its own
@@ -356,13 +370,14 @@
     window.EJS_emulator = null;
     if (biosBlobUrl) { try { URL.revokeObjectURL(biosBlobUrl); } catch { /* already gone */ } biosBlobUrl = ""; }
     if (padObserver) { padObserver.disconnect(); padObserver = null; }
+    stopAutoSave();
     destroyStick();
     el.game.replaceChildren();
     document.body.classList.remove("pad-on");
     document.body.classList.remove("menu-off");
     setFallbackFullscreen(false);
     el.brandDot.classList.remove("live");
-    ["btnEject", "btnScheme", "btnPad", "btnBar", "btnFull"].forEach((k) => { el[k].hidden = true; });
+    ["btnEject", "btnScheme", "btnPad", "btnBar", "btnFull", "btnAutoSave"].forEach((k) => { el[k].hidden = true; });
     el.opacityWrap.hidden = true;
   }
 
@@ -438,6 +453,67 @@
     requestAnimationFrame(() => {
       if (emulator && emulator.handleResize) emulator.handleResize();
     });
+  }
+
+  // The core renders into a GL viewport shaped from the canvas box, then letterboxes
+  // that inside the canvas buffer when the box is wider than the DS frame. Those
+  // bands are painted opaque black by the core, so nothing behind the canvas can
+  // fill them: the only way to lose them is to make the box the same shape as the
+  // video. EmulatorJS' own background blur would have the same problem, which is why
+  // this is a canvas geometry fix rather than a styling one.
+  //
+  // melonDS reports its dimensions before it has switched to the Left/Right layout,
+  // when the value is still the portrait 0.667, and taking that would squash the
+  // canvas to a quarter of its width. Only a landscape aspect is trusted; a retry
+  // picks up the real value once the core is running.
+  function fitCanvas() {
+    if (!emulator || !emulator.gameManager) return false;
+    const cv = document.querySelector(".ejs_canvas");
+    if (!cv) return false;
+    let aspect = 0;
+    try { aspect = Number(emulator.gameManager.getVideoDimensions("aspect")) || 0; } catch { /* not up yet */ }
+    if (!(aspect > 1.2)) return false;
+    cv.style.aspectRatio = String(aspect);
+    cv.style.height = "auto";
+    cv.style.width = "100%";
+    cv.style.margin = "auto";
+    if (emulator.handleResize) emulator.handleResize();
+    captureFrame();
+    return true;
+  }
+
+  // Refit until the core reports a landscape aspect, then leave it alone.
+  function fitCanvasSoon() {
+    let tries = 0;
+    const tick = () => {
+      if (fitCanvas() || tries++ >= 10) return;
+      setTimeout(tick, 400);
+    };
+    tick();
+  }
+
+  // Feed the letterbox bands a blurred copy of the frame. EmulatorJS' own
+  // backgroundBlur needs a config image and is dropped on start, so the capture
+  // comes from the core instead. This is ambience rather than a live mirror: one
+  // good frame is enough, and a failed capture just leaves the backdrop colour.
+  let frameCaptured = false;
+
+  function captureFrame() {
+    if (frameCaptured || !emulator || !emulator.gameManager) return;
+    const gm = emulator.gameManager;
+    if (typeof gm.screenshot !== "function") return;
+    frameCaptured = true;
+    gm.screenshot().then((buf) => {
+      if (!buf || !buf.length) { frameCaptured = false; return; }
+      const url = URL.createObjectURL(new Blob([buf], { type: "image/png" }));
+      const img = new Image();
+      img.onload = () => {
+        document.documentElement.style.setProperty("--frame-blur", `url("${url}")`);
+        URL.revokeObjectURL(url);
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); frameCaptured = false; };
+      img.src = url;
+    }).catch(() => { frameCaptured = false; });
   }
 
   // Safari on iPhone exposes no element-level fullscreen at all: neither
@@ -674,18 +750,16 @@
     el.schemeLabel.textContent = scheme === "stick" ? "Stick" : "D-pad";
     if (!emulator) return;
 
-    // EmulatorJS tags the D-pad container with b_dpad; hiding just that leaves the
-    // L/R shoulder buttons in place while our thumbstick drives the same inputs.
+    // EmulatorJS' own D-pad is pinned to the bottom-left corner, which is not where
+    // a thumb naturally rests. Both schemes are drawn by the floating control
+    // instead — a ring in "stick", a cross in "dpad" — so its D-pad stays hidden
+    // either way. L/R shoulders are a separate element and remain untouched.
     const apply = () => {
       const dpad = document.querySelector(".ejs_virtualGamepad_parent .b_dpad");
       if (!dpad) return false;
-      if (scheme === "stick") {
-        dpad.style.visibility = "hidden";
-        buildStick();
-      } else {
-        dpad.style.visibility = "";
-        destroyStick();
-      }
+      dpad.style.visibility = "hidden";
+      buildStick();
+      if (stick) stick.wrap.classList.toggle("dpad", scheme === "dpad");
       return true;
     };
 
@@ -696,6 +770,14 @@
     requestAnimationFrame(retry);
   }
 
+  // A floating pad: the ring is not pinned to a corner, it appears wherever the
+  // thumb lands in the left half of the screen. The base stays put once the thumb
+  // is down, and once the thumb travels past the ring it is the base that follows,
+  // so a long drag keeps full travel without ever leaving the finger behind.
+  const STICK_R = 52;      // max knob travel, px
+  const STICK_BASE = 76;   // ring diameter, px
+  const STICK_DRIFT = 58;  // how far the thumb may roam before the base follows
+
   function buildStick() {
     if (stick) return;
     const wrap = document.createElement("div");
@@ -703,13 +785,12 @@
     wrap.setAttribute("role", "slider");
     wrap.setAttribute("aria-label", "Analog stick");
     wrap.innerHTML = '<div id="stickKnob"></div>';
-    wrap.hidden = settings.padHidden;
     el.game.appendChild(wrap);
 
     const knob = wrap.querySelector("#stickKnob");
-    const R = 44; // max knob travel in px
     let active = false;
     let held = new Set();
+    let baseX = 0, baseY = 0;   // ring centre, in stage coordinates
 
     const press = (code) => {
       if (held.has(code)) return;
@@ -723,16 +804,35 @@
     };
     const clearAll = () => { Array.from(held).forEach(release); };
 
+    const placeBase = (x, y) => {
+      baseX = x;
+      baseY = y;
+      wrap.style.left = x + "px";
+      wrap.style.top = y + "px";
+    };
+
     const update = (clientX, clientY) => {
-      const r = wrap.getBoundingClientRect();
-      let dx = clientX - (r.left + r.width / 2);
-      let dy = clientY - (r.top + r.height / 2);
+      let dx = clientX - baseX;
+      let dy = clientY - baseY;
+
+      // Let the base chase the thumb so the stick never runs out of travel.
+      const roam = Math.hypot(dx, dy);
+      if (roam > STICK_DRIFT) {
+        const pull = roam - STICK_DRIFT;
+        baseX += (dx / roam) * pull;
+        baseY += (dy / roam) * pull;
+        wrap.style.left = baseX + "px";
+        wrap.style.top = baseY + "px";
+        dx = clientX - baseX;
+        dy = clientY - baseY;
+      }
+
       const dist = Math.hypot(dx, dy);
-      if (dist > R) { dx = (dx / dist) * R; dy = (dy / dist) * R; }
+      if (dist > STICK_R) { dx = (dx / dist) * STICK_R; dy = (dy / dist) * STICK_R; }
       knob.style.transform = `translate(${dx}px, ${dy}px)`;
 
       // 8-way with a dead zone, so diagonals work the way a DS expects.
-      const dead = R * 0.3;
+      const dead = STICK_R * 0.3;
       const nx = Math.abs(dx) < dead ? 0 : dx;
       const ny = Math.abs(dy) < dead ? 0 : dy;
 
@@ -752,16 +852,64 @@
       clearAll();
       knob.style.transform = "translate(0px, 0px)";
       wrap.classList.remove("active");
+      wrap.classList.remove("shown");
     };
 
-    wrap.addEventListener("pointerdown", (e) => {
+    // Pointer events are captured on the zone, so a drag that leaves the zone or
+    // the window still arrives here until the finger lifts.
+    const zone = el.padZone;
+
+    const onDown = (e) => {
+      if (active) return;
+      const stage = el.stage.getBoundingClientRect();
+      const x = e.clientX - stage.left;
+      const y = e.clientY - stage.top;
       active = true;
-      wrap.setPointerCapture(e.pointerId);
+      placeBase(x, y);
+      wrap.classList.add("shown");
+      // Throws if the pointer is already gone (a tap so short the id was retired);
+      // the drag still works, it just cannot leave the zone.
+      try { zone.setPointerCapture(e.pointerId); } catch { /* pointer already retired */ }
       update(e.clientX, e.clientY);
       e.preventDefault();
-    });
-    wrap.addEventListener("pointermove", (e) => { if (active) { update(e.clientX, e.clientY); e.preventDefault(); } });
-    ["pointerup", "pointercancel"].forEach((t) => wrap.addEventListener(t, end));
+    };
+    const onMove = (e) => { if (active) { update(e.clientX, e.clientY); e.preventDefault(); } };
+
+    zone.addEventListener("pointerdown", onDown);
+    zone.addEventListener("pointermove", onMove);
+    ["pointerup", "pointercancel"].forEach((t) => zone.addEventListener(t, end));
+
+    // Safari historically delivered only touch events here, so the pad is also driven
+    // by touch. Whichever family arrives first wins; the other is then ignored, which
+    // keeps a single finger from driving the stick twice.
+    let touchActive = false;
+    const touchXY = (t) => ({ x: t.clientX, y: t.clientY });
+    const onTouchStart = (e) => {
+      if (active || touchActive) return;
+      const t = e.changedTouches[0];
+      if (!t) return;
+      const pt = touchXY(t);
+      touchActive = true;
+      const stage = el.stage.getBoundingClientRect();
+      active = true;
+      placeBase(pt.x - stage.left, pt.y - stage.top);
+      wrap.classList.add("shown");
+      update(pt.x, pt.y);
+      e.preventDefault();
+    };
+    const onTouchMove = (e) => {
+      if (!active || !touchActive) return;
+      const t = e.changedTouches[0];
+      if (!t) return;
+      update(t.clientX, t.clientY);
+      e.preventDefault();
+    };
+    const onTouchEnd = () => { touchActive = false; end(); };
+
+    zone.addEventListener("touchstart", onTouchStart, { passive: false });
+    zone.addEventListener("touchmove", onTouchMove, { passive: false });
+    ["touchend", "touchcancel"].forEach((t) => zone.addEventListener(t, onTouchEnd));
+
     // Releasing outside the window would otherwise leave a direction stuck down.
     const onBlur = () => end();
     const onHide = () => { if (document.hidden) end(); };
@@ -772,6 +920,12 @@
       wrap,
       end,
       destroy() {
+        zone.removeEventListener("pointerdown", onDown);
+        zone.removeEventListener("pointermove", onMove);
+        ["pointerup", "pointercancel"].forEach((t) => zone.removeEventListener(t, end));
+        zone.removeEventListener("touchstart", onTouchStart);
+        zone.removeEventListener("touchmove", onTouchMove);
+        ["touchend", "touchcancel"].forEach((t) => zone.removeEventListener(t, onTouchEnd));
         window.removeEventListener("blur", onBlur);
         document.removeEventListener("visibilitychange", onHide);
       },
@@ -784,6 +938,127 @@
     stick.destroy();
     stick.wrap.remove();
     stick = null;
+  }
+
+  /* ---------------- auto-save ----------------
+     EmulatorJS already persists battery saves (.sav) when it exits, but that only
+     helps games that save on their own. This keeps an emulator save state instead,
+     so progress survives a refresh, a backgrounded tab, or a battery save the game
+     never wrote. Stored in IndexedDB rather than localStorage because a DS state is
+     far past the localStorage quota. */
+
+  const AUTOSAVE_MS = 60000;
+  const AUTOSAVE_DB = "ndspocket-autosave";
+  const AUTOSAVE_STORE = "states";
+
+  let autoTimer = 0;
+  let autoSlug = "";
+
+  function autoDb() {
+    return new Promise((resolve, reject) => {
+      if (!window.indexedDB) return reject(new Error("no indexedDB"));
+      const req = indexedDB.open(AUTOSAVE_DB, 1);
+      req.onupgradeneeded = () => {
+        if (!req.result.objectStoreNames.contains(AUTOSAVE_STORE)) {
+          req.result.createObjectStore(AUTOSAVE_STORE);
+        }
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  async function autoTx(mode, run) {
+    const db = await autoDb();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(AUTOSAVE_STORE, mode);
+      const store = tx.objectStore(AUTOSAVE_STORE);
+      let out;
+      try { out = run(store); } catch (err) { reject(err); return; }
+      tx.oncomplete = () => { db.close(); resolve(out && out.result !== undefined ? out.result : out); };
+      tx.onerror = () => { db.close(); reject(tx.error); };
+      tx.onabort = () => { db.close(); reject(tx.error); };
+    });
+  }
+
+  const autoKey = (slug) => "state:" + slug;
+
+  // The stored state is only removed once the ROM it belongs to is known, so that
+  // switching autosave off before a game is picked does not race the slug assignment
+  // and leave a stale state behind that a later session would resume from.
+  function dropAutoState() {
+    if (!autoSlug) return;
+    autoTx("readwrite", (s) => s.delete(autoKey(autoSlug))).catch(() => { /* nothing stored */ });
+  }
+
+  // A ROM is identified by its file name, so the same game resumes across sessions
+  // without anything being uploaded or fingerprinted.
+  function slugFor(name) {
+    return String(name || "game").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 64) || "game";
+  }
+
+  function autoSaveNow() {
+    if (!settings.autoSave || !emulator || !emulator.started || !autoSlug) return;
+    const gm = emulator.gameManager;
+    if (!gm || typeof gm.getState !== "function") return;
+    let data;
+    // getState() throws when the core has no savestate support, and it also throws
+    // mid-boot, so this must stay guarded rather than assumed.
+    try {
+      if (typeof gm.supportsStates === "function" && !gm.supportsStates()) return;
+      data = gm.getState();
+    } catch { return; }
+    if (!data || !data.length) return;
+    autoTx("readwrite", (s) => s.put({ at: Date.now(), data }, autoKey(autoSlug)))
+      .then(() => flashAutoSaved())
+      .catch(() => { /* quota or private mode: autosave just stays off */ });
+  }
+
+  function autoLoad() {
+    if (!settings.autoSave || !emulator || !autoSlug) return;
+    const gm = emulator.gameManager;
+    if (!gm || typeof gm.loadState !== "function") return;
+    autoTx("readonly", (s) => s.get(autoKey(autoSlug)))
+      .then((rec) => {
+        if (!rec || !rec.data) return;
+        try { gm.loadState(rec.data); } catch { /* state from another core build */ }
+      })
+      .catch(() => { /* nothing stored */ });
+  }
+
+  function startAutoSave() {
+    stopAutoSave();
+    if (!settings.autoSave) return;
+    autoTimer = setInterval(autoSaveNow, AUTOSAVE_MS);
+  }
+
+  function stopAutoSave() {
+    if (autoTimer) clearInterval(autoTimer);
+    autoTimer = 0;
+  }
+
+  function flashAutoSaved() {
+    if (!el.btnAutoSave) return;
+    el.btnAutoSave.classList.add("saved");
+    setTimeout(() => el.btnAutoSave.classList.remove("saved"), 600);
+  }
+
+  function applyAutoSave(on, quiet) {
+    settings.autoSave = on;
+    el.btnAutoSave.classList.toggle("on", on);
+    el.autoLabel.textContent = on ? "Auto on" : "Auto off";
+    el.btnAutoSave.title = on
+      ? "Progress is saved every minute and when you leave the page"
+      : "Automatic saving is off";
+    if (on) {
+      startAutoSave();
+    } else {
+      stopAutoSave();
+      // Drop the stored state too, otherwise turning autosave back on would resume
+      // from a moment the player has since moved past.
+      dropAutoState();
+    }
+    if (!quiet) writeSettings();
   }
 
   let padObserver = null;
@@ -856,7 +1131,6 @@
 
     el.opacityWrap.style.opacity = hidden ? ".45" : "";
     el.opacityWrap.style.pointerEvents = hidden ? "none" : "";
-    if (stick) stick.wrap.hidden = hidden;
     if (!quiet) writeSettings();
   }
 
@@ -870,6 +1144,13 @@
     el.btnPad.addEventListener("click", () => applyPadHidden(!settings.padHidden));
 
     el.opacity.addEventListener("input", () => applyOpacity(Number(el.opacity.value) / 100));
+
+    el.btnAutoSave.addEventListener("click", () => applyAutoSave(!settings.autoSave));
+
+    // Last-chance save: pagehide fires on iOS where unload often does not, and a
+    // backgrounded tab is where a mobile session usually ends.
+    window.addEventListener("pagehide", () => { autoSaveNow(); });
+    document.addEventListener("visibilitychange", () => { if (document.hidden) autoSaveNow(); });
 
     el.btnFull.addEventListener("click", () => {
       if (!emulator) return;
@@ -930,6 +1211,7 @@
     applyOpacity(settings.padOpacity, true);
     applyPadHidden(settings.padHidden, true);
     applyBarHidden(settings.barHidden, true);
+    applyAutoSave(settings.autoSave, true);
     reportEnvironment();
     // Eject reloads the page; keep the picker up and stay in landscape.
     try {
@@ -939,6 +1221,8 @@
       }
     } catch { /* private mode */ }
 
+    // Show the frame's own colours in the letterbox bands rather than plain black.
+    document.documentElement.style.setProperty("--frame-fill", "#0b1016");
     el.opacityOut.textContent = Math.round(settings.padOpacity * 100) + "%";
   }
 

@@ -18,7 +18,7 @@
 <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
 <link rel="icon" href="icons/icon-192.png" sizes="192x192" type="image/png">
 
-<link rel="stylesheet" href="styles.css?v=3">
+<link rel="stylesheet" href="styles.css?v=4">
 </head>
 <body>
 
@@ -29,6 +29,7 @@
   <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l7 3v5.5c0 4.2-2.9 7.6-7 9-4.1-1.4-7-4.8-7-9V6z"/></symbol>
   <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
   <symbol id="i-gamepad" viewBox="0 0 24 24"><path d="M7 8h10a4 4 0 0 1 4 4v1a4 4 0 0 1-4 4h-1l-1.5-2h-5L8 17H7a4 4 0 0 1-4-4v-1a4 4 0 0 1 4-4z"/><path d="M8 11v3M6.5 12.5h3M15 11.5h.01M17 13.5h.01"/></symbol>
+  <symbol id="i-save" viewBox="0 0 24 24"><path d="M5 4h11l3 3v13H5z"/><path d="M8 4v6h8V4M8 20v-6h8v6"/></symbol>
 </svg>
 
 <div id="app">
@@ -60,6 +61,10 @@
         <svg><use href="#i-sliders"/></svg><span id="barLabel">Bar on</span>
       </button>
 
+      <button id="btnAutoSave" class="tbtn on" type="button" hidden title="Keep your progress saved automatically">
+        <svg><use href="#i-save"/></svg><span id="autoLabel">Auto on</span>
+      </button>
+
       <label id="opacityWrap" class="tfield" hidden title="On-screen control opacity">
         <span>Opacity</span>
         <input id="opacity" type="range" min="20" max="100" step="5" value="70">
@@ -78,6 +83,8 @@
 
   <main id="stage">
     <div id="game"></div>
+
+    <div id="padZone" aria-hidden="true"></div>
 
     <button id="btnExitFull" class="exit-full" type="button" aria-label="Exit full screen" hidden>
       <svg><use href="#i-x"/></svg>
@@ -146,6 +153,6 @@
   <input id="biosInput" type="file" accept=".bin,.zip,.7z,.rar" multiple hidden>
 </div>
 
-<script src="app.js?v=3"></script>
+<script src="app.js?v=4"></script>
 </body>
 </html>

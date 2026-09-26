@@ -70,6 +70,7 @@ body{
 .tbtn:hover{background:var(--panel2);border-color:#2b3d4f}
 .tbtn:active{transform:translateY(1px)}
 .tbtn.on{border-color:rgba(77,141,255,.55);background:rgba(77,141,255,.14);color:#cfe0ff}
+.tbtn.saved{border-color:rgba(72,201,132,.6);background:rgba(72,201,132,.22);color:#d6f5e4}
 .tbtn[disabled]{opacity:.45;pointer-events:none}
 
 .tfield{
@@ -96,6 +97,45 @@ body{
 
 #game{position:absolute;inset:0}
 #game .ejs_parent{background:#05080b}
+
+/* Frame blur. The melonDS core letterboxes its own viewport inside the canvas, so
+   with a canvas wider than the 2.67:1 DS frame it paints opaque black bands at the
+   top and bottom itself — nothing behind the canvas can fill those. Matching the
+   canvas box to the video aspect (see fitCanvas) leaves the bands to CSS instead,
+   and these layers fill them: a dimmed, scaled-up copy of the frame under a blurred
+   one. Without a capture the plain backdrop colour shows, which is still correct. */
+#game .ejs_canvas_parent{
+  position:relative;display:flex;align-items:center;justify-content:center;
+  background:var(--frame-fill,#05080b);
+}
+#game .ejs_canvas_parent::before,
+#game .ejs_canvas_parent::after{
+  content:"";position:absolute;inset:0;pointer-events:none;z-index:0;
+  background-image:var(--frame-blur,none);
+  background-repeat:no-repeat;background-position:center;background-size:cover;
+}
+#game .ejs_canvas_parent::before{transform:scale(1.15);filter:blur(18px) saturate(1.15);opacity:.5}
+#game .ejs_canvas_parent::after{filter:blur(2px);opacity:.22}
+#game .ejs_canvas_parent .ejs_canvas{position:relative;z-index:1}
+
+/* Pointer surface for the floating controls. Sits below EmulatorJS' own on-screen
+   buttons so they win where they overlap, and it only covers the left half, which
+   is the top screen — never the touchscreen. */
+#padZone{position:absolute;left:0;top:0;width:50%;height:100%;z-index:1;touch-action:none}
+body.pad-off #padZone{display:none}
+body.menu-off #padZone{display:none}
+#game .ejs_virtualGamepad_parent{z-index:2}
+
+/* EmulatorJS' control clusters are full-height containers, so their empty space
+   would swallow every touch meant for the floating pad. EmulatorJS re-enables
+   pointer events on the clusters themselves, so they have to be turned off here too;
+   only the actual buttons keep taking input. */
+#game .ejs_virtualGamepad_parent,
+#game .ejs_virtualGamepad_left,
+#game .ejs_virtualGamepad_right{pointer-events:none}
+#game .ejs_virtualGamepad_button,
+#game .ejs_dpad_main,
+#game .ejs_dpad_main *{pointer-events:auto}
 
 /* Fallback "fullscreen" for browsers with no element fullscreen (iPhone Safari):
    drop the header from the layout so the game fills the display, then float just
@@ -314,21 +354,34 @@ body.pad-off #stick{display:none !important}
 .ejs_dpad_main{filter:drop-shadow(0 2px 6px rgba(0,0,0,.5))}
 .ejs_dpad_bar{background:rgba(230,238,246,.24) !important;border-color:rgba(230,238,246,.34) !important}
 
-/* Analog stick rendering (used when "Stick" scheme is active) */
+/* Analog stick rendering (used when "Stick" scheme is active). Floating: it is
+   positioned by app.js at the point the thumb lands, so it stays hidden until then
+   and never takes pointer events itself. */
 #stick{
-  position:absolute;bottom:calc(58px + var(--safe-b));left:calc(20px + var(--safe-l));
-  width:150px;height:150px;border-radius:50%;z-index:5;
-  background:radial-gradient(circle at 50% 50%,rgba(230,238,246,.10),rgba(230,238,246,.03) 62%,transparent 70%);
-  border:1.5px solid rgba(230,238,246,.22);
-  opacity:var(--pad-opacity);touch-action:none;user-select:none;-webkit-user-select:none;
+  position:absolute;width:76px;height:76px;border-radius:50%;z-index:2;
+  transform:translate(-50%,-50%);
+  background:radial-gradient(circle at 50% 50%,rgba(230,238,246,.12),rgba(230,238,246,.04) 62%,transparent 70%);
+  border:1.5px solid rgba(230,238,246,.26);
+  opacity:0;pointer-events:none;transition:opacity .12s ease;
 }
-#stick[hidden]{display:none}
+#stick.shown{opacity:var(--pad-opacity)}
 #stickKnob{
-  position:absolute;left:50%;top:50%;width:62px;height:62px;margin:-31px 0 0 -31px;border-radius:50%;
-  background:rgba(230,238,246,.26);border:1.5px solid rgba(230,238,246,.42);
+  position:absolute;left:50%;top:50%;width:42px;height:42px;margin:-21px 0 0 -21px;border-radius:50%;
+  background:rgba(230,238,246,.3);border:1.5px solid rgba(230,238,246,.46);
   box-shadow:0 3px 12px rgba(0,0,0,.45);transition:background .1s ease;
 }
-#stick.active #stickKnob{background:rgba(77,141,255,.6)}
+#stick.active #stickKnob{background:rgba(77,141,255,.62)}
+
+/* D-pad scheme: same floating ring, but drawn as a cross so the four directions
+   read as discrete rather than analog. */
+#stick.dpad::before,
+#stick.dpad::after{
+  content:"";position:absolute;left:50%;top:50%;background:rgba(230,238,246,.22);
+  border-radius:3px;pointer-events:none;
+}
+#stick.dpad::before{width:16px;height:44px;margin:-22px 0 0 -8px}
+#stick.dpad::after{width:44px;height:16px;margin:-8px 0 0 -22px}
+#stick.dpad #stickKnob{width:34px;height:34px;margin:-17px 0 0 -17px;opacity:.9}
 
 /* ---------- compact landscape phones ---------- */
 
@@ -342,8 +395,8 @@ body.pad-off #stick{display:none !important}
   .tfield input[type=range]{width:74px}
   .ejs_virtualGamepad_button{width:50px !important;height:50px !important;line-height:50px !important;font-size:17px !important}
   .ejs_virtualGamepad_left,.ejs_virtualGamepad_right{width:136px !important;height:136px !important}
-  #stick{width:132px;height:132px;bottom:calc(52px + var(--safe-b))}
-  #stickKnob{width:54px;height:54px;margin:-27px 0 0 -27px}
+  #stick{width:68px;height:68px}
+  #stickKnob{width:38px;height:38px;margin:-19px 0 0 -19px}
 }
 
 @media (pointer:fine){

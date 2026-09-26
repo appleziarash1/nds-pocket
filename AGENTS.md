@@ -141,10 +141,42 @@ Chromium headless + CDP scripts in `/tmp` (`accept.js` full suite, `iphone2.js`
 landscape/touch, `biosmatrix.js` BIOS matrix, `biocancel.js`). Serve locally from
 `/tmp/nds-local`. All suites also run against the live URL.
 
-`app.js`'s thumbstick listens for **pointer** events (`pointerdown`/`pointermove`),
-not touch events. Test it with `Input.dispatchTouchEvent` (Safari derives pointer
-events from touch) or synthetic `PointerEvent`s — synthetic `TouchEvent`s will not
-drive it.
+WebKit is the only faithful target for iPhone behaviour, so the v4 features are
+covered by `/tmp/regress_v4.py` (fill, floating pad, autosave), `/tmp/test_interaction.py`
+(touchscreen, hide/show, scheme) and `/tmp/test_resume.py` (save then reload then
+resume). Run them with `python3 <script> http://localhost:8903/index.html <rom>`.
+
+The floating pad listens for **pointer** events *and* **touch** events. Safari has
+historically delivered only touch, so both are bound and whichever arrives first wins.
+Test with `page.touchscreen.tap` / `page.mouse`, or synthetic `PointerEvent`s.
+
+## Canvas geometry and the letterbox bands
+
+The melonDS core sizes its GL viewport from the canvas *element* box and then fits
+the 2.67:1 DS frame inside the canvas *buffer*. With a box wider than the video it
+letterboxes in-buffer and paints the bands opaque black — they are the core's pixels,
+so no CSS behind the canvas can fill them. `fitCanvas()` sets the canvas box to the
+video aspect, which makes the viewport fill the buffer exactly (verify with
+`gl.getParameter(gl.VIEWPORT)` vs `canvas.height`). A frame captured from the core
+then feeds `--frame-blur` for the remaining CSS bands.
+
+`getVideoDimensions('aspect')` returns the portrait `0.667` before the core applies
+the Left/Right layout, so `fitCanvas()` ignores anything at or below `1.2` and retries.
+Taking that early value squashes the canvas to a quarter width.
+
+EmulatorJS' `.ejs_virtualGamepad_left/right` are full-height containers and its
+stylesheet re-enables `pointer-events` on them, so both the parent *and* the clusters
+must be set to `none` for the floating pad's touches to land. Only
+`.ejs_virtualGamepad_button` and the d-pad keep `auto`.
+
+## Autosave
+
+Save states go to IndexedDB (`ndspocket-autosave`), keyed by `state:<rom-slug>` from
+the ROM's file name, because a DS state is ~6.5 MB and would blow the localStorage
+quota. Writes happen every 60 s, on `pagehide` and on tab hide; the state is loaded
+2.5 s after game start, since loading mid-boot fights the BIOS handshake. Turning
+autosave off deletes the stored state, and a boot with autosave off drops any state
+left by an earlier session, so re-enabling never resumes a stale moment.
 
 ## Style
 

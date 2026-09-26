@@ -9,7 +9,7 @@
 // Bump this whenever index.html, styles.css or app.js change. Shell assets are
 // served cache-first, so without a bump a returning visitor gets the new HTML
 // with the old scripts still cached.
-const VERSION = "v3";
+const VERSION = "v4";
 const SHELL = `ndspocket-shell-${VERSION}`;
 const RUNTIME = `ndspocket-runtime-${VERSION}`;
 
