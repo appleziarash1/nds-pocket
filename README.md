@@ -23,9 +23,9 @@ portrait, which fights this layout. Use **Full** in the top bar instead.
 
 | Action | On-screen | Keyboard |
 |---|---|---|
-| D-pad | Stick or D-pad, bottom left | Arrow keys |
+| D-pad | Stick or D-pad, bottom left | `W` `A` `S` `D` |
 | A / B | Right cluster | `Z` / `X` |
-| X / Y | Right cluster | `A` / `S` |
+| X / Y | Right cluster | `K` / `L` |
 | L / R | Top corners | `Q` / `E` |
 | Start / Select | Centre | `Enter` / `V` |
 

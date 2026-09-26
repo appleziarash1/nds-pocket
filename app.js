@@ -147,6 +147,34 @@
     w.EJS_volume = 0.7;
     w.EJS_threads = typeof SharedArrayBuffer === "function";
     w.EJS_defaultOptions = { melonds_screen_layout: "Left/Right" };
+    // D-pad on WASD. EmulatorJS replaces the whole scheme when this is set, so
+    // it mirrors the built-in nds map with two changes: the arrows become WASD,
+    // and X/Y move off A/S (to K/L) because otherwise pressing A would fire
+    // dpad-left and the X button at the same time.
+    w.EJS_defaultControls = {
+      0: {
+        0: { value: "x", value2: "BUTTON_2" },
+        1: { value: "l", value2: "BUTTON_4" },
+        2: { value: "v", value2: "SELECT" },
+        3: { value: "enter", value2: "START" },
+        4: { value: "w", value2: "DPAD_UP" },
+        5: { value: "s", value2: "DPAD_DOWN" },
+        6: { value: "a", value2: "DPAD_LEFT" },
+        7: { value: "d", value2: "DPAD_RIGHT" },
+        8: { value: "z", value2: "BUTTON_1" },
+        9: { value: "k", value2: "BUTTON_3" },
+        10: { value: "q", value2: "LEFT_TOP_SHOULDER" },
+        11: { value: "e", value2: "RIGHT_TOP_SHOULDER" },
+        14: { value: "", value2: "LEFT_STICK" },
+        24: { value: "1" },
+        25: { value: "2" },
+        26: { value: "3" },
+        27: {},
+        28: {},
+        29: {},
+      },
+      1: {}, 2: {}, 3: {},
+    };
     // The shell supplies its own on-screen controls, so trim EmulatorJS' chrome
     // down to the essentials and keep every button in the menu bar. Its own
     // fullscreen button is off because it force-locks NDS to portrait, which
@@ -382,9 +410,9 @@
     <h2>Controls</h2>
     <table>
       <tr><th>Action</th><th>Touch</th><th>Keyboard</th></tr>
-      <tr><td>D-pad</td><td>Stick or D-pad, bottom left</td><td><kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd></td></tr>
+      <tr><td>D-pad</td><td>Stick or D-pad, bottom left</td><td><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></td></tr>
       <tr><td>A / B</td><td>Right cluster</td><td><kbd>Z</kbd> / <kbd>X</kbd></td></tr>
-      <tr><td>X / Y</td><td>Right cluster</td><td><kbd>A</kbd> / <kbd>S</kbd></td></tr>
+      <tr><td>X / Y</td><td>Right cluster</td><td><kbd>K</kbd> / <kbd>L</kbd></td></tr>
       <tr><td>L / R</td><td>Top corners</td><td><kbd>Q</kbd> / <kbd>E</kbd></td></tr>
       <tr><td>Start / Select</td><td>Centre</td><td><kbd>Enter</kbd> / <kbd>V</kbd></td></tr>
     </table>
