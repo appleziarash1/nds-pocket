@@ -46,11 +46,40 @@ silently does nothing, and `document.fullscreenEnabled` is not a safe proxy for
 the same reason. Detect on the element itself (`fullscreenFn` in `app.js`).
 
 When no method exists the app falls back to `#app.pseudo-full`, which drops the
-header and safe-area padding so the canvas fills the display. That is a real
-height change (348 -> 390 on iPhone 12 landscape), so `emulator.handleResize()`
-must be called after toggling. Because the header is gone, `.exit-full`
+header from the layout so the canvas fills the display. That is a real height
+change (348 -> 390 on iPhone 12 landscape), so `emulator.handleResize()` must be
+called after toggling. Because the header is gone, `.exit-full`
 (`#btnExitFull`) is the only way out, so it has to stay hittable; Escape also
 exits. Teardown resets the state, otherwise ejecting leaves the header hidden.
+
+The in-game bar normally lives in the header, but there is no header in
+`pseudo-full`, so it is floated back over the top edge instead. That makes it the
+one case where the bar overlays the game; it is kept to a single row and given
+`margin-right` to clear `.exit-full`.
+
+## The in-game control bar
+
+EmulatorJS renders its control bar (restart, pause, save state, settings, …) as an
+overlay inside `#game`, and `start()` auto-opens it on a timer. Both are wrong
+here: it would cover the touchscreen, and on a phone it would pop in and out under
+a moving thumb. `adoptGameBar()` moves the `.ejs_menu_bar` node into `#gameBar` in
+the header, and its own show/hide state is ignored in favour of the `barHidden`
+setting behind **Bar on/off**.
+
+Three non-obvious consequences of moving it out of `#game`:
+
+- EmulatorJS skins its buttons under `.ejs_big_screen` / `.ejs_small_screen`,
+  classes it sets on the *stage*. In the header that scope no longer matches, so
+  the buttons fall back to the browser's default grey. `styles.css` restates the
+  transparent skin and the icon-only layout explicitly.
+- EmulatorJS injects `emulator.min.css` **after** `styles.css`, so equal-specificity
+  overrides lose. Its own floating pad toggle (`.ejs_virtualGamepad_open`) needs
+  `#game .ejs_virtualGamepad_open` to beat it; a bare class selector silently does
+  nothing.
+- The popups (settings, disks) anchor inside the bar and open *upward*
+  (`bottom:100%`). `#gameBar` scrolls sideways, which would clip them, so they are
+  re-anchored `position:fixed` below the header. Any new popup added by a core will
+  need the same treatment.
 
 ## Testing
 

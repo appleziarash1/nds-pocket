@@ -48,16 +48,16 @@
         <svg><use href="#i-x"/></svg><span>Eject</span>
       </button>
 
-      <button id="btnMenu" class="tbtn" type="button" hidden>
-        <svg><use href="#i-sliders"/></svg><span>Menu</span>
-      </button>
-
       <button id="btnScheme" class="tbtn" type="button" hidden title="Switch between analog stick and D-pad">
         <svg><use href="#i-gamepad"/></svg><span id="schemeLabel">Stick</span>
       </button>
 
       <button id="btnPad" class="tbtn on" type="button" hidden title="Show or hide the on-screen controls">
         <svg><use href="#i-gamepad"/></svg><span id="padLabel">Pad on</span>
+      </button>
+
+      <button id="btnBar" class="tbtn on" type="button" hidden title="Show or hide the in-game control bar">
+        <svg><use href="#i-sliders"/></svg><span id="barLabel">Bar on</span>
       </button>
 
       <label id="opacityWrap" class="tfield" hidden title="On-screen control opacity">
@@ -70,6 +70,10 @@
         <svg><use href="#i-expand"/></svg><span>Full</span>
       </button>
     </div>
+
+    <!-- EmulatorJS' control bar (restart, pause, save state, settings, …) is moved
+         in here at runtime so it no longer floats over the game. -->
+    <div id="gameBar" aria-label="In-game controls"></div>
   </header>
 
   <main id="stage">
