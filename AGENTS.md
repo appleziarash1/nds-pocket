@@ -82,7 +82,17 @@ real debugging time.
   when the player pinned an orientation — on `auto` the screen must stay free to
   rotate. `updateOrientation()` re-runs the guard and the fit on
   `resize`/`orientationchange`, so turning the phone swaps the layout live with no
-  reload.
+reload.
+- The stacked (portrait) layout splits the stage: the screens keep the upper area and
+  `--pad-strip` (`clamp(150px,24vh,230px)`) is reserved along the bottom for the
+  controls, applied as `padding-bottom` on `.ejs_canvas_parent` so `fitCanvas()` sizes
+  the frame inside the remaining space (it subtracts the parent's padding, since
+  `clientHeight` includes it). The pad zone is pinned to that band (`bottom:0`,
+  `height:var(--pad-strip)`) because that is where a thumb rests; when the zone only
+  covered the top half the pad appeared nowhere reachable and read as broken. The
+  split is keyed on `body.layout-portrait`, set by `applyLayoutClass()` from
+  `effectiveLayout()` on every init, layout change and rotation — class rather than
+  media query so pinned **Stacked** gets it too when the phone is held sideways.
 - Threaded cores are a rendering risk on Apple mobile. The service worker's
   COOP/COEP headers make the page cross-origin isolated, which exposes
   `SharedArrayBuffer`, so `EJS_threads` would otherwise be true on iPhone and pull

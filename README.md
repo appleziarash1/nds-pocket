@@ -50,9 +50,10 @@ gamepad badge once one connects. The on-screen pad has an opacity slider (20–1
 and a **Pad on/off** toggle for when you are using a physical controller.
 
 Because the pad covers the left half, that area maps to the **top screen**. The
-touchscreen is the right half, and stays clear for games that use it. In portrait
-the pad zone follows the top screen, since the stacked pair puts it in the upper
-half and leaves the lower half free for the touchscreen.
+touchscreen is the right half, and stays clear for games that use it. In portrait the
+screens take the upper area and a band along the bottom is reserved for the controls,
+so the pad appears there — low on the screen, where a thumb actually rests — while the
+touchscreen above stays clear.
 
 ### Autosave
 

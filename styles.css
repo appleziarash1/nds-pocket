@@ -305,17 +305,31 @@ body.menu-off #gameBar{display:none}
    keeps its own safe-area insets, so the extra padding is only about clearance. */
 @media (orientation:portrait){
   #stage{padding:8px 0}
-  #game .ejs_canvas{margin:auto}
-  /* The stacked pair puts the top screen in the upper half, so the floating-stick
-     surface moves with it. The lower half is the touchscreen and stays tappable. */
-  #padZone{width:100%;height:50%}
-  .ejs_virtualGamepad_parent{bottom:calc(52px + var(--safe-b)) !important}
-  .ejs_virtualGamepad_left{left:calc(10px + var(--safe-l)) !important;width:132px !important;height:132px !important}
-  .ejs_virtualGamepad_right{right:calc(10px + var(--safe-r)) !important;width:140px !important;height:140px !important}
-  .ejs_virtualGamepad_button{width:50px !important;height:50px !important;line-height:50px !important;font-size:17px !important}
   #stick{width:68px;height:68px}
   #stickKnob{width:38px;height:38px;margin:-19px 0 0 -19px}
 }
+
+/* ---------- stacked screens ---------- */
+
+/* The stacked pair is tall, so the stage is split in two: the screens keep the whole
+   upper area and a band along the bottom is left to the on-screen controls. Reserving
+   the band is what keeps the screens full size and the touchscreen clear of a resting
+   thumb — floating the controls over them would either shrink the pair or bury the
+   lower screen.
+   The band is also where a thumb naturally rests, so the floating pad's surface owns
+   the whole of it. When that surface only covered the top half the pad appeared
+   nowhere a thumb could reach, which read as the pad being broken in portrait.
+
+   Keyed on the body class rather than the media query so the pinned "Stacked" mode
+   gets the same split when the phone is held sideways. */
+:root{--pad-strip:clamp(150px,24vh,230px)}
+body.layout-portrait #game .ejs_canvas_parent{padding-bottom:var(--pad-strip)}
+body.layout-portrait #game .ejs_canvas{margin:auto}
+body.layout-portrait #padZone{width:100%;top:auto;bottom:var(--safe-b);height:var(--pad-strip)}
+body.layout-portrait .ejs_virtualGamepad_parent{bottom:calc(52px + var(--safe-b)) !important}
+body.layout-portrait .ejs_virtualGamepad_left{left:calc(10px + var(--safe-l)) !important;width:132px !important;height:132px !important}
+body.layout-portrait .ejs_virtualGamepad_right{right:calc(10px + var(--safe-r)) !important;width:140px !important;height:140px !important}
+body.layout-portrait .ejs_virtualGamepad_button{width:50px !important;height:50px !important;line-height:50px !important;font-size:17px !important}
 
 .prose{font-size:13.5px;line-height:1.65;color:#c6d5e3}
 .prose h2{font-size:13px;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);margin:18px 0 8px}

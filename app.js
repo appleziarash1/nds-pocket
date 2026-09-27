@@ -440,7 +440,15 @@
 
   function wireOrientation() {
     let t = 0;
-    const soon = () => { clearTimeout(t); t = setTimeout(updateOrientation, 150); };
+    const soon = () => {
+      clearTimeout(t);
+      t = setTimeout(() => {
+        // "Auto" flips with the device, so the class has to follow before the core
+        // settles; applyLayoutClass is cheap and safe with no emulator.
+        applyLayoutClass();
+        updateOrientation();
+      }, 150);
+    };
     window.addEventListener("resize", soon);
     window.addEventListener("orientationchange", soon);
     updateOrientation();
@@ -458,11 +466,20 @@
     return isPortrait() ? "portrait" : "landscape";
   }
 
+  // Mirror the layout onto the body so the stylesheet can split the portrait stage
+  // into screens and a control band without re-deriving the mode from a media query
+  // (pinned "Stacked" has to look the same on a landscape phone). Safe before the
+  // core exists; the class is what the CSS keys off, not the emulator.
+  function applyLayoutClass() {
+    document.body.classList.toggle("layout-portrait", effectiveLayout() === "portrait");
+  }
+
   // EmulatorJS only reads EJS_defaultOptions when it has no saved settings for the
   // game, so a layout stored during an earlier session keeps overriding our choice.
   // Re-assert it once the core is up and refit, so the frame is right on every load,
   // not just the first. changeSettingOption no-ops when the value already matches.
   function guardScreenLayout() {
+    applyLayoutClass();
     if (!emulator || typeof emulator.changeSettingOption !== "function") return;
     const want = effectiveLayout() === "portrait" ? "Top/Bottom" : "Left/Right";
     let current = null;
@@ -485,6 +502,7 @@
   function applyLayout(mode, quiet) {
     settings.layout = LAYOUT_ORDER.includes(mode) ? mode : "auto";
     el.layoutLabel.textContent = LAYOUT_LABEL[settings.layout];
+    applyLayoutClass();
     if (!quiet) writeSettings();
     // Guard the case where the core has not built its menu yet: it will pick the
     // layout up from guardScreenLayout() once it is ready.
@@ -516,9 +534,15 @@
     // fits whether the frame is wide (landscape stage) or tall (portrait stage, or the
     // stacked layout pinned on a landscape phone). Setting only width would let a
     // stacked frame run off the bottom of a short stage.
+    // clientWidth/clientHeight include the parent's padding, which in the stacked
+    // layout carves out the control band; measuring the content box instead keeps the
+    // frame out of that band.
     const box = cv.parentElement;
-    const availW = box ? box.clientWidth : 0;
-    const availH = box ? box.clientHeight : 0;
+    const cs = box ? getComputedStyle(box) : null;
+    const padX = cs ? parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight) : 0;
+    const padY = cs ? parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom) : 0;
+    const availW = box ? box.clientWidth - padX : 0;
+    const availH = box ? box.clientHeight - padY : 0;
     if (!availW || !availH) return false;
     let w = availW;
     let h = w / aspect;
