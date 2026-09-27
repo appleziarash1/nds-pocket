@@ -102,24 +102,25 @@ body{
 #game{position:absolute;inset:0}
 #game .ejs_parent{background:#05080b}
 
-/* Frame blur. The melonDS core letterboxes its own viewport inside the canvas, so
-   with a canvas wider than the 2.67:1 DS frame it paints opaque black bands at the
-   top and bottom itself — nothing behind the canvas can fill those. Matching the
-   canvas box to the video aspect (see fitCanvas) leaves the bands to CSS instead,
-   and these layers fill them: a dimmed, scaled-up copy of the frame under a blurred
-   one. Without a capture the plain backdrop colour shows, which is still correct. */
+/* Frame ambience. The melonDS core letterboxes its own viewport inside the canvas,
+   so with a canvas wider than the DS frame it paints opaque black bands itself —
+   nothing behind the canvas can fill those. Matching the canvas box to the video
+   aspect (see fitCanvas) leaves the bands to CSS instead, and this layer fills them
+   with a copy of the frame. The copy is blurred once in app.js, before it becomes a
+   CSS background, and is only ~120px wide. A CSS `filter: blur()` here would re-rasterise
+   the whole layer every frame against a live WebGL canvas, which is what made phones
+   stutter; an already-soft bitmap is drawn in one cheap pass instead. Without a
+   capture the plain backdrop colour shows, which is still correct. */
 #game .ejs_canvas_parent{
   position:relative;display:flex;align-items:center;justify-content:center;
   background:var(--frame-fill,#05080b);
 }
-#game .ejs_canvas_parent::before,
-#game .ejs_canvas_parent::after{
+#game .ejs_canvas_parent::before{
   content:"";position:absolute;inset:0;pointer-events:none;z-index:0;
   background-image:var(--frame-blur,none);
   background-repeat:no-repeat;background-position:center;background-size:cover;
+  opacity:.55;
 }
-#game .ejs_canvas_parent::before{transform:scale(1.15);filter:blur(18px) saturate(1.15);opacity:.5}
-#game .ejs_canvas_parent::after{filter:blur(2px);opacity:.22}
 #game .ejs_canvas_parent .ejs_canvas{position:relative;z-index:1}
 
 /* Pointer surface for the floating controls. Sits below EmulatorJS' own on-screen
@@ -295,10 +296,26 @@ body.menu-off #gameBar{display:none}
 .close svg{width:15px;height:15px}
 .close:hover{color:var(--text)}
 
-/* Rotate hint: only while a game is running and the viewport is portrait. */
-#rotate{z-index:60}
-.logo.rot svg{width:46px;height:46px;animation:tilt 2.4s ease-in-out infinite}
-@keyframes tilt{0%,40%{transform:rotate(-16deg)}60%,100%{transform:rotate(16deg)}}
+/* Rotate hint is gone: both orientations are supported now. */
+
+/* ---------- portrait ---------- */
+
+/* Stacked screens are tall, so the stage needs room above and below the canvas for
+   the on-screen controls rather than the controls floating over the game. The pad
+   keeps its own safe-area insets, so the extra padding is only about clearance. */
+@media (orientation:portrait){
+  #stage{padding:8px 0}
+  #game .ejs_canvas{margin:auto}
+  /* The stacked pair puts the top screen in the upper half, so the floating-stick
+     surface moves with it. The lower half is the touchscreen and stays tappable. */
+  #padZone{width:100%;height:50%}
+  .ejs_virtualGamepad_parent{bottom:calc(52px + var(--safe-b)) !important}
+  .ejs_virtualGamepad_left{left:calc(10px + var(--safe-l)) !important;width:132px !important;height:132px !important}
+  .ejs_virtualGamepad_right{right:calc(10px + var(--safe-r)) !important;width:140px !important;height:140px !important}
+  .ejs_virtualGamepad_button{width:50px !important;height:50px !important;line-height:50px !important;font-size:17px !important}
+  #stick{width:68px;height:68px}
+  #stickKnob{width:38px;height:38px;margin:-19px 0 0 -19px}
+}
 
 .prose{font-size:13.5px;line-height:1.65;color:#c6d5e3}
 .prose h2{font-size:13px;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);margin:18px 0 8px}
@@ -338,16 +355,18 @@ body.pad-off #stick{display:none !important}
 .ejs_virtualGamepad_button{
   width:56px !important;height:56px !important;line-height:56px !important;
   font-size:19px !important;font-weight:700 !important;
-  background:rgba(230,238,246,.16) !important;
+  /* Flat translucent fill rather than backdrop-filter. Blurring the backdrop under
+     ten buttons means re-sampling the live canvas every frame on the GPU, which
+     stutters on phones for a purely cosmetic gain. */
+  background:rgba(20,28,38,.62) !important;
   border:1.5px solid rgba(230,238,246,.34) !important;
   color:#f2f7fc !important;
   border-radius:50% !important;
-  backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px);
   text-shadow:0 1px 3px rgba(0,0,0,.7);
   transition:background .08s ease,transform .08s ease;
 }
 .ejs_virtualGamepad_button.ejs_virtualGamepad_button_down{
-  background:rgba(77,141,255,.6) !important;transform:scale(.94);
+  background:rgba(77,141,255,.72) !important;transform:scale(.94);
 }
 
 .ejs_virtualGamepad_left{left:calc(14px + var(--safe-l)) !important;bottom:0 !important;width:150px !important;height:150px !important}

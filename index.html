@@ -18,7 +18,7 @@
 <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
 <link rel="icon" href="icons/icon-192.png" sizes="192x192" type="image/png">
 
-<link rel="stylesheet" href="styles.css?v=5">
+<link rel="stylesheet" href="styles.css?v=6">
 </head>
 <body>
 
@@ -51,6 +51,10 @@
 
       <button id="btnScheme" class="tbtn" type="button" hidden title="Switch between analog stick and D-pad">
         <svg><use href="#i-gamepad"/></svg><span id="schemeLabel">Stick</span>
+      </button>
+
+      <button id="btnLayout" class="tbtn on" type="button" hidden title="How the two DS screens are arranged">
+        <svg><use href="#i-sliders"/></svg><span id="layoutLabel">Auto</span>
       </button>
 
       <button id="btnPad" class="tbtn on" type="button" hidden title="Show or hide the on-screen controls">
@@ -134,25 +138,12 @@
         <div id="sheetBody" class="prose"></div>
       </div>
     </div>
-
-    <div id="rotate" class="overlay" hidden>
-      <div class="card slim">
-        <div class="logo rot">
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <rect x="7" y="2" width="10" height="20" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/>
-            <path d="M4 9a7 7 0 0 1 3-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-          </svg>
-        </div>
-        <h1>Rotate to landscape</h1>
-        <p class="lede">Both DS screens sit side by side, so the game needs a wide view. Turn your phone sideways.</p>
-      </div>
-    </div>
   </main>
 
   <input id="romInput" type="file" accept=".nds,.zip,.7z,.rar,.srl,.dsi" hidden>
   <input id="biosInput" type="file" accept=".bin,.zip,.7z,.rar" multiple hidden>
 </div>
 
-<script src="app.js?v=5"></script>
+<script src="app.js?v=6"></script>
 </body>
 </html>

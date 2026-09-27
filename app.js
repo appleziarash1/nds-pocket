@@ -22,6 +22,8 @@
     btnEject: $("btnEject"),
     btnScheme: $("btnScheme"),
     schemeLabel: $("schemeLabel"),
+    btnLayout: $("btnLayout"),
+    layoutLabel: $("layoutLabel"),
     btnPad: $("btnPad"),
     padLabel: $("padLabel"),
     btnBar: $("btnBar"),
@@ -55,14 +57,13 @@
     sheetTitle: $("sheetTitle"),
     sheetBody: $("sheetBody"),
     sheetX: $("sheetX"),
-    rotate: $("rotate"),
 
     romInput: $("romInput"),
     biosInput: $("biosInput"),
   };
 
   const settings = Object.assign(
-    { padOpacity: 0.7, scheme: "stick", padHidden: false, barHidden: false, autoSave: true },
+    { padOpacity: 0.7, scheme: "stick", padHidden: false, barHidden: false, autoSave: true, layout: "auto" },
     readSettings()
   );
 
@@ -224,7 +225,7 @@
       applyPadHidden(settings.padHidden, true);
       adoptGameBar();
       applyBarHidden(settings.barHidden, true);
-      lockLandscape();
+      applyOrientationLock();
       updateOrientation();
       guardScreenLayout();
       fitCanvasSoon();
@@ -232,7 +233,7 @@
     w.EJS_onGameStart = () => {
       hideLoad();
       el.brandDot.classList.add("live");
-      lockLandscape();
+      applyOrientationLock();
       updateOrientation();
       guardScreenLayout();
       fitCanvasSoon();
@@ -313,6 +314,7 @@
       booted = true;
       el.btnEject.hidden = false;
       el.btnScheme.hidden = false;
+      el.btnLayout.hidden = false;
       el.btnPad.hidden = false;
       el.btnBar.hidden = false;
       el.btnFull.hidden = false;
@@ -377,7 +379,7 @@
     document.body.classList.remove("menu-off");
     setFallbackFullscreen(false);
     el.brandDot.classList.remove("live");
-    ["btnEject", "btnScheme", "btnPad", "btnBar", "btnFull", "btnAutoSave"].forEach((k) => { el[k].hidden = true; });
+    ["btnEject", "btnScheme", "btnLayout", "btnPad", "btnBar", "btnFull", "btnAutoSave"].forEach((k) => { el[k].hidden = true; });
     el.opacityWrap.hidden = true;
   }
 
@@ -425,64 +427,112 @@
   }
   function closeSheet() { el.sheet.hidden = true; }
 
-  // The DS shows two screens side by side, so portrait is unusable. Ask for
-  // landscape up front (Android) and nag on iPhone, where the API is absent.
+  // Both orientations are supported: side by side in landscape, stacked in portrait,
+  // chosen by the layout setting (or the viewport when it is on "auto"). Rotating
+  // therefore means swapping the core's screen layout and refitting, not asking the
+  // player to turn back. The lock is only requested while a game runs on Android,
+  // where it exists; iOS ignores it and rotating is the point.
   function updateOrientation() {
-    const portrait = window.matchMedia("(orientation: portrait)").matches;
-    el.rotate.hidden = !(booted && portrait);
+    if (!booted) return;
+    guardScreenLayout();
+    fitCanvasSoon();
   }
 
   function wireOrientation() {
-    window.addEventListener("resize", updateOrientation);
-    window.addEventListener("orientationchange", updateOrientation);
+    let t = 0;
+    const soon = () => { clearTimeout(t); t = setTimeout(updateOrientation, 150); };
+    window.addEventListener("resize", soon);
+    window.addEventListener("orientationchange", soon);
     updateOrientation();
   }
 
+  // The DS shows two screens. Side by side ("Left/Right") suits a landscape stage;
+  // stacked ("Top/Bottom") suits portrait, where a side-by-side pair would be a thin
+  // letterboxed strip. The choice is a setting: "auto" follows the viewport.
+  function isPortrait() {
+    return window.matchMedia("(orientation: portrait)").matches;
+  }
+
+  function effectiveLayout() {
+    if (settings.layout === "landscape" || settings.layout === "portrait") return settings.layout;
+    return isPortrait() ? "portrait" : "landscape";
+  }
+
   // EmulatorJS only reads EJS_defaultOptions when it has no saved settings for the
-  // game, so a layout stored during an earlier session keeps overriding the
-  // side-by-side default. A stacked frame (256x384) fitted into a landscape stage
-  // fills roughly a quarter of its width, leaving black either side - the "half
-  // game, half black" players reported. Re-assert the layout once the core is up
-  // and refit the canvas, so the frame is right on every load, not just the first.
+  // game, so a layout stored during an earlier session keeps overriding our choice.
+  // Re-assert it once the core is up and refit, so the frame is right on every load,
+  // not just the first. changeSettingOption no-ops when the value already matches.
   function guardScreenLayout() {
     if (!emulator || typeof emulator.changeSettingOption !== "function") return;
+    const want = effectiveLayout() === "portrait" ? "Top/Bottom" : "Left/Right";
     let current = null;
     try { current = emulator.getSettingValue("melonds_screen_layout"); } catch { /* menu not built yet */ }
-    if (current === "Left/Right") return;
-    emulator.changeSettingOption("melonds_screen_layout", "Left/Right");
+    if (current === want) return;
+    emulator.changeSettingOption("melonds_screen_layout", want);
     requestAnimationFrame(() => {
       if (emulator && emulator.handleResize) emulator.handleResize();
+      captureFrame();
     });
   }
 
+  // Cycle Auto -> Landscape -> Portrait. "Auto" is the useful default (a phone in
+  // portrait stacks the screens, in landscape it puts them side by side); the pinned
+  // modes exist for players whose device does not report orientation the way they
+  // expect, and they also drive the OS orientation lock.
+  const LAYOUT_ORDER = ["auto", "landscape", "portrait"];
+  const LAYOUT_LABEL = { auto: "Auto", landscape: "Side", portrait: "Stacked" };
+
+  function applyLayout(mode, quiet) {
+    settings.layout = LAYOUT_ORDER.includes(mode) ? mode : "auto";
+    el.layoutLabel.textContent = LAYOUT_LABEL[settings.layout];
+    if (!quiet) writeSettings();
+    // Guard the case where the core has not built its menu yet: it will pick the
+    // layout up from guardScreenLayout() once it is ready.
+    if (!emulator || typeof emulator.changeSettingOption !== "function") return;
+    applyOrientationLock();
+    guardScreenLayout();
+    fitCanvasSoon();
+  }
+
   // The core renders into a GL viewport shaped from the canvas box, then letterboxes
-  // that inside the canvas buffer when the box is wider than the DS frame. Those
-  // bands are painted opaque black by the core, so nothing behind the canvas can
-  // fill them: the only way to lose them is to make the box the same shape as the
-  // video. EmulatorJS' own background blur would have the same problem, which is why
-  // this is a canvas geometry fix rather than a styling one.
+  // that inside the canvas buffer when the box has a different aspect than the
+  // frame. Those bands are painted opaque black by the core, so nothing behind the
+  // canvas can fill them: the only way to lose them is to make the box the same
+  // shape as the video.
   //
-  // melonDS reports its dimensions before it has switched to the Left/Right layout,
-  // when the value is still the portrait 0.667, and taking that would squash the
-  // canvas to a quarter of its width. Only a landscape aspect is trusted; a retry
-  // picks up the real value once the core is running.
+  // melonDS reports its dimensions before it has applied the requested layout, so a
+  // reading can be the other orientation's aspect and must not be trusted yet:
+  // landscape wants ~2.67 (512x192) and portrait wants ~0.67 (256x384), so each
+  // waits for its own shape and the retry loop picks up the real value.
   function fitCanvas() {
     if (!emulator || !emulator.gameManager) return false;
     const cv = document.querySelector(".ejs_canvas");
     if (!cv) return false;
+    const portrait = effectiveLayout() === "portrait";
     let aspect = 0;
     try { aspect = Number(emulator.gameManager.getVideoDimensions("aspect")) || 0; } catch { /* not up yet */ }
-    if (!(aspect > 1.2)) return false;
+    if (portrait ? !(aspect < 1) : !(aspect > 1.2)) return false;
+    // Size the box in px from its parent, constrained on whichever axis binds, so it
+    // fits whether the frame is wide (landscape stage) or tall (portrait stage, or the
+    // stacked layout pinned on a landscape phone). Setting only width would let a
+    // stacked frame run off the bottom of a short stage.
+    const box = cv.parentElement;
+    const availW = box ? box.clientWidth : 0;
+    const availH = box ? box.clientHeight : 0;
+    if (!availW || !availH) return false;
+    let w = availW;
+    let h = w / aspect;
+    if (h > availH) { h = availH; w = h * aspect; }
     cv.style.aspectRatio = String(aspect);
-    cv.style.height = "auto";
-    cv.style.width = "100%";
+    cv.style.width = Math.round(w) + "px";
+    cv.style.height = Math.round(h) + "px";
     cv.style.margin = "auto";
     if (emulator.handleResize) emulator.handleResize();
     captureFrame();
     return true;
   }
 
-  // Refit until the core reports a landscape aspect, then leave it alone.
+  // Refit until the core reports an aspect matching the requested layout, then stop.
   function fitCanvasSoon() {
     let tries = 0;
     const tick = () => {
@@ -492,32 +542,54 @@
     tick();
   }
 
-  // Feed the letterbox bands a blurred copy of the frame. EmulatorJS' own
+  // Feed the letterbox bands a soft copy of the frame. EmulatorJS' own
   // backgroundBlur needs a config image and is dropped on start, so the capture
   // comes from the core instead. This is ambience rather than a live mirror: one
   // good frame is enough, and a failed capture just leaves the backdrop colour.
+  //
+  // The blur is done here, once, on a downscaled bitmap. Handing the raw frame to
+  // CSS and blurring there would re-rasterise a full-screen layer every frame on
+  // top of the live canvas, which is what made phones drop frames; a 120px-wide
+  // image scaled up is already soft and costs one cheap draw per frame.
   let frameCaptured = false;
-  let frameBlobUrl = "";
+  const FRAME_AMBIENCE_W = 120;
+
+  function softenFrame(buf) {
+    const raw = URL.createObjectURL(new Blob([buf], { type: "image/png" }));
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const w = FRAME_AMBIENCE_W;
+          const h = Math.max(1, Math.round(w * (img.height / img.width)));
+          const cv = document.createElement("canvas");
+          cv.width = w;
+          cv.height = h;
+          const ctx = cv.getContext("2d");
+          // Two draws through a small canvas approximate a blur without the cost of
+          // a large-radius filter.
+          ctx.drawImage(img, 0, 0, w, h);
+          ctx.drawImage(cv, 0, 0, w, h);
+          resolve(cv.toDataURL("image/jpeg", 0.7));
+        } catch { resolve(""); }
+        URL.revokeObjectURL(raw);
+      };
+      img.onerror = () => { URL.revokeObjectURL(raw); resolve(""); };
+      img.src = raw;
+    });
+  }
 
   function captureFrame() {
     if (frameCaptured || !emulator || !emulator.gameManager) return;
     const gm = emulator.gameManager;
     if (typeof gm.screenshot !== "function") return;
     frameCaptured = true;
-    gm.screenshot().then((buf) => {
-      if (!buf || !buf.length) { frameCaptured = false; return; }
-      const url = URL.createObjectURL(new Blob([buf], { type: "image/png" }));
-      const img = new Image();
-      img.onload = () => {
-        // The URL is referenced by a CSS custom property, so it has to stay alive;
-        // revoking it here leaves the property pointing at a dead blob and the
-        // bands fall back to the plain colour. Keep the newest one instead.
-        if (frameBlobUrl) URL.revokeObjectURL(frameBlobUrl);
-        frameBlobUrl = url;
-        document.documentElement.style.setProperty("--frame-blur", `url("${url}")`);
-      };
-      img.onerror = () => { URL.revokeObjectURL(url); frameCaptured = false; };
-      img.src = url;
+    gm.screenshot().then(softenFrame).then((dataUrl) => {
+      if (!dataUrl) { frameCaptured = false; return; }
+      // The data URL is referenced by a CSS custom property, so it has to stay
+      // alive; a blob URL revoked after load would leave the property pointing at
+      // nothing and the bands would fall back to the plain colour.
+      document.documentElement.style.setProperty("--frame-blur", `url("${dataUrl}")`);
     }).catch(() => { frameCaptured = false; });
   }
 
@@ -540,13 +612,22 @@
     el.btnFull.classList.toggle("on", on);
     // The stage just changed size, so let the emulator re-fit its canvas.
     if (emulator && emulator.handleResize) requestAnimationFrame(() => emulator.handleResize());
-    lockLandscape();
+    applyOrientationLock();
   }
 
-  function lockLandscape() {
-    if (screen.orientation && screen.orientation.lock) {
-      screen.orientation.lock("landscape").catch(() => { /* iOS has no lock */ });
+  // Ask the OS to hold the chosen orientation, but only when the player pinned one.
+  // On "auto" both orientations are wanted, so the screen is left free to rotate —
+  // locking would defeat portrait. iOS has no lock at all and ignores this.
+  function applyOrientationLock() {
+    const so = screen.orientation;
+    if (!so) return;
+    if (settings.layout === "landscape" || settings.layout === "portrait") {
+      if (typeof so.lock === "function") {
+        so.lock(settings.layout).catch(() => { /* iOS has no lock */ });
+      }
+      return;
     }
+    if (typeof so.unlock === "function") { try { so.unlock(); } catch { /* unsupported */ } }
   }
 
   const HELP_HTML = `
@@ -588,7 +669,10 @@
     <p>The default core boots games without a BIOS, so skip this unless a title misbehaves. To add one, tap <b>Add NDS BIOS</b> and pick <code>bios7.bin</code>, <code>bios9.bin</code> and <code>firmware.bin</code> — you can select all three at once, or drop in a <code>.zip</code> that already contains them. They're kept in this browser only and are cleared when you eject.</p>
 
     <h2>Install as an app</h2>
-    <p>On iPhone: <b>Share → Add to Home Screen</b>, then launch it and rotate to landscape. On desktop Chrome or Edge, use the install icon in the address bar.</p>
+    <p>On iPhone: <b>Share → Add to Home Screen</b>, then launch it from the home screen so it opens offline. On desktop Chrome or Edge, use the install icon in the address bar.</p>
+
+    <h2>Screen layout</h2>
+    <p>The two DS screens are shown <b>side by side</b> in landscape and <b>stacked</b> in portrait. <b>Auto</b> in the top bar follows whichever way you hold the phone; tap it to pin <b>Side</b> or <b>Stacked</b> instead.</p>
 
     <h2>Full screen</h2>
     <p><b>Full</b> in the top bar hides the toolbar so the game fills the screen. Tap the small <b>×</b> that appears in the corner to come back, or press <kbd>Esc</kbd> on a keyboard.</p>
@@ -783,6 +867,24 @@
   const STICK_BASE = 76;   // ring diameter, px
   const STICK_DRIFT = 58;  // how far the thumb may roam before the base follows
 
+  // Where the stage sits on screen. Reading this on every pointermove forces a style
+  // recalc and layout pass during play, which is exactly when the main thread is
+  // busiest; the value rarely changes, so it is cached and dropped whenever the
+  // layout could have moved (resize, rotation, a band of the UI appearing or going).
+  let stageRectCache = null;
+  function stageRect() {
+    if (!stageRectCache) stageRectCache = el.stage.getBoundingClientRect();
+    return stageRectCache;
+  }
+  function invalidateStageRect() { stageRectCache = null; }
+  function watchStageRect() {
+    window.addEventListener("resize", invalidateStageRect);
+    window.addEventListener("orientationchange", invalidateStageRect);
+    if (typeof ResizeObserver === "function") {
+      new ResizeObserver(invalidateStageRect).observe(el.stage);
+    }
+  }
+
   function buildStick() {
     if (stick) return;
     const wrap = document.createElement("div");
@@ -820,7 +922,7 @@
       // The ring is positioned inside the stage, so compare in stage coordinates.
       // Using viewport coordinates here would offset every reading by the stage
       // origin (the header height) and pin the stick against its travel limit.
-      const stage = el.stage.getBoundingClientRect();
+      const stage = stageRect();
       const x = clientX - stage.left;
       const y = clientY - stage.top;
       let dx = x - baseX;
@@ -872,7 +974,7 @@
 
     const onDown = (e) => {
       if (active) return;
-      const stage = el.stage.getBoundingClientRect();
+      const stage = stageRect();
       const x = e.clientX - stage.left;
       const y = e.clientY - stage.top;
       active = true;
@@ -901,7 +1003,7 @@
       if (!t) return;
       const pt = touchXY(t);
       touchActive = true;
-      const stage = el.stage.getBoundingClientRect();
+      const stage = stageRect();
       active = true;
       placeBase(pt.x - stage.left, pt.y - stage.top);
       wrap.classList.add("shown");
@@ -1152,6 +1254,11 @@
       setScheme(settings.scheme === "stick" ? "dpad" : "stick");
     });
 
+    el.btnLayout.addEventListener("click", () => {
+      const next = LAYOUT_ORDER[(LAYOUT_ORDER.indexOf(settings.layout) + 1) % LAYOUT_ORDER.length];
+      applyLayout(next);
+    });
+
     el.btnPad.addEventListener("click", () => applyPadHidden(!settings.padHidden));
 
     el.opacity.addEventListener("input", () => applyOpacity(Number(el.opacity.value) / 100));
@@ -1180,7 +1287,7 @@
         } catch {
           setFallbackFullscreen(true);
         }
-        lockLandscape();
+        applyOrientationLock();
         return;
       }
       // iPhone Safari has no element fullscreen at all, so hide the shell chrome
@@ -1219,16 +1326,18 @@
     wireBios();
     wireControls();
     wireOrientation();
+    watchStageRect();
     applyOpacity(settings.padOpacity, true);
     applyPadHidden(settings.padHidden, true);
     applyBarHidden(settings.barHidden, true);
+    applyLayout(settings.layout, true);
     applyAutoSave(settings.autoSave, true);
     reportEnvironment();
-    // Eject reloads the page; keep the picker up and stay in landscape.
+    // Eject reloads the page; keep the picker up.
     try {
       if (sessionStorage.getItem(EJECT_FLAG)) {
         sessionStorage.removeItem(EJECT_FLAG);
-        lockLandscape();
+        applyOrientationLock();
       }
     } catch { /* private mode */ }
 

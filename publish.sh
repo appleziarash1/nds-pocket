@@ -27,7 +27,7 @@ code=$(api -o /tmp/ndsp_repo.json -w '%{http_code}' "https://api.github.com/repo
 if [ "$code" = "404" ]; then
   code=$(api -o /tmp/ndsp_repo.json -w '%{http_code}' -X POST \
     "https://api.github.com/user/repos" \
-    -d "{\"name\":\"$REPO\",\"description\":\"NDS Pocket - landscape-first Nintendo DS PWA. Bring your own ROM.\",\"homepage\":\"https://$OWNER.github.io/$REPO/\",\"has_pages\":false}")
+    -d "{\"name\":\"$REPO\",\"description\":\"NDS Pocket - Nintendo DS PWA, portrait and landscape. Bring your own ROM.\",\"homepage\":\"https://$OWNER.github.io/$REPO/\",\"has_pages\":false}")
   if [ "$code" != "201" ]; then
     echo "Could not create the repo (HTTP $code):" >&2
     cat /tmp/ndsp_repo.json >&2

@@ -66,18 +66,23 @@ real debugging time.
   `melonds screen layout`, not prettified. The core list entry is
   `Core (Requires restart)`. Help text must match these exactly.
 - With `melonds_screen_layout: "Left/Right"` the canvas is ~2.4:1 (two panels side
-  by side). The DS touchscreen is the right-hand panel.
+  by side). The DS touchscreen is the right-hand panel. `"Top/Bottom"` stacks them
+  (~0.67:1) and suits portrait.
 - `EJS_defaultOptions` is only consulted when there are **no saved settings** for
   the game. `getCoreSettings()` in `emulator.js` writes the saved blob first and
   appends defaults only for keys not already present, so a layout stored during an
-  earlier session silently wins over the default on every later load. That is what
-  produced the "half game, half black" report: the core ran its own `Top/Bottom`
-  default (256x384, ~1.5:1 portrait) and the fitter left black either side of a
-  landscape stage. `guardScreenLayout()` re-asserts `Left/Right` from
-  `EJS_ready`/`EJS_onGameStart` and refits the canvas, so the frame is right on
-  every load rather than only the first. It re-asserts instead of writing
-  localStorage because `changeSettingOption` is the same path the settings menu
-  uses, and it no-ops when the layout is already correct.
+  earlier session silently wins. `guardScreenLayout()` re-asserts the layout from
+  `EJS_ready`/`EJS_onGameStart` and refits the canvas. It re-asserts instead of
+  writing localStorage because `changeSettingOption` is the same path the settings
+  menu uses, and it no-ops when the layout is already correct.
+- The layout is not hard-coded to landscape: `settings.layout` is `auto` (follows
+  `matchMedia("(orientation: portrait)")`), `landscape`, or `portrait`, cycled by
+  the **Layout** button. `applyLayout()` maps it to the core value (`Left/Right` /
+  `Top/Bottom`) and also drives `screen.orientation.lock`, which is only requested
+  when the player pinned an orientation — on `auto` the screen must stay free to
+  rotate. `updateOrientation()` re-runs the guard and the fit on
+  `resize`/`orientationchange`, so turning the phone swaps the layout live with no
+  reload.
 - Threaded cores are a rendering risk on Apple mobile. The service worker's
   COOP/COEP headers make the page cross-origin isolated, which exposes
   `SharedArrayBuffer`, so `EJS_threads` would otherwise be true on iPhone and pull
@@ -135,6 +140,32 @@ Three non-obvious consequences of moving it out of `#game`:
   re-anchored `position:fixed` below the header. Any new popup added by a core will
   need the same treatment.
 
+## Offline
+
+Offline needs the EmulatorJS **loader** and bundle cached, not just the app shell.
+The loader, `emulator.min.css` and `emulator.min.js` are injected as plain
+`<script>`/`<link>` tags with no `crossorigin` attribute, so the browser fetches
+them without CORS and they arrive as **opaque** responses (`status === 0`,
+`type === "opaque"`). An earlier `fetch` handler guarded on
+`res.status === 200 && type in {basic, cors}` and silently dropped every one of
+them: the shell cached, the emulator did not, and a cold offline start died on
+`Could not load .../loader.js`. The guard now accepts opaque responses, since a
+cached opaque response can still be replayed to the same kind of tag.
+
+Opaque responses **cannot** be re-wrapped (`withHeaders` would throw), so the
+same-origin COOP/COEP path must not touch them. They also cannot be read, so
+`mode: "cors"` vs `mode: "no-cors"` has to match how the page will request the
+file: warming the core files (`melonds-wasm.data`, `melonds.json`, `version.json`,
+`extract7z.js`, `localization/en-US.json`) with `no-cors` would store opaque
+entries whose URLs match the core's later `fetch`, and a cors read of an opaque
+entry is rejected. Install therefore warms in two groups, `WARM_NO_CORS` and
+`WARM_CORS`; the core files except the default `melonds` fill in on first use.
+
+`/tmp/offline.py` is the check: boot a ROM online, then `context.route` every
+non-localhost request to `abort` and reload. `startedOffline: true` plus
+`coreName: "melonds"` is a pass. The only remaining console error is the
+`Wake Lock permission request denied` warning, which is expected headless.
+
 ## Testing
 
 Chromium headless + CDP scripts in `/tmp` (`accept.js` full suite, `iphone2.js`
@@ -160,16 +191,27 @@ checking the ring and knob land on it.
 ## Canvas geometry and the letterbox bands
 
 The melonDS core sizes its GL viewport from the canvas *element* box and then fits
-the 2.67:1 DS frame inside the canvas *buffer*. With a box wider than the video it
-letterboxes in-buffer and paints the bands opaque black — they are the core's pixels,
-so no CSS behind the canvas can fill them. `fitCanvas()` sets the canvas box to the
-video aspect, which makes the viewport fill the buffer exactly (verify with
-`gl.getParameter(gl.VIEWPORT)` vs `canvas.height`). A frame captured from the core
-then feeds `--frame-blur` for the remaining CSS bands.
+the DS frame inside the canvas *buffer*. With a box whose aspect differs from the
+video it letterboxes in-buffer and paints the bands opaque black — they are the
+core's pixels, so no CSS behind the canvas can fill them. `fitCanvas()` sets the
+canvas box to the video aspect, which makes the viewport fill the buffer exactly
+(verify with `gl.getParameter(gl.VIEWPORT)` vs `canvas.height`). A frame captured
+from the core then feeds `--frame-blur` for the remaining CSS bands.
 
-`getVideoDimensions('aspect')` returns the portrait `0.667` before the core applies
-the Left/Right layout, so `fitCanvas()` ignores anything at or below `1.2` and retries.
-Taking that early value squashes the canvas to a quarter width.
+The box is sized in **px from the parent**, constrained on whichever axis binds
+(`w = availW; h = w / aspect; if (h > availH) { h = availH; w = h * aspect; }`),
+not `width:100%`. Sizing on width alone overflows a short stage: the stacked layout
+pinned on a landscape phone wanted 844x1266 inside a 348px-tall stage.
+
+`getVideoDimensions('aspect')` returns the other orientation's aspect before the
+core applies the requested layout, so `fitCanvas()` only accepts a reading that
+matches the requested layout — landscape waits for `> 1.2`, portrait for `< 1` —
+and retries. Taking an early value squashes the canvas to a fraction of its size.
+
+The floating pad's `update()` reads the stage rect on every pointermove. That forced
+layout during play is exactly when the main thread is busiest, so the rect is cached
+in `stageRect()` and invalidated by `watchStageRect()` (resize, orientationchange,
+and a `ResizeObserver` on the stage).
 
 EmulatorJS' `.ejs_virtualGamepad_left/right` are full-height containers and its
 stylesheet re-enables `pointer-events` on them, so both the parent *and* the clusters

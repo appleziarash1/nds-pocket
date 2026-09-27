@@ -9,7 +9,7 @@
 // Bump this whenever index.html, styles.css or app.js change. Shell assets are
 // served cache-first, so without a bump a returning visitor gets the new HTML
 // with the old scripts still cached.
-const VERSION = "v5";
+const VERSION = "v6";
 const SHELL = `ndspocket-shell-${VERSION}`;
 const RUNTIME = `ndspocket-runtime-${VERSION}`;
 
@@ -24,14 +24,56 @@ const SHELL_ASSETS = [
   "./icons/icon-512.png",
 ];
 
+// The EmulatorJS front end. The loader, its stylesheet and the minified bundle are
+// injected as plain <script>/<link> tags with no crossorigin attribute, so the page
+// fetches them without CORS and they must be cached the same way (opaque). Warming
+// them means a cold offline start does not have to have played a game first.
+const EJS_BASE = "https://cdn.emulatorjs.org/stable/data/";
+const WARM_NO_CORS = [
+  EJS_BASE + "loader.js",
+  EJS_BASE + "emulator.min.css",
+  EJS_BASE + "emulator.min.js",
+];
+
+// The default melonds core and the files the loader needs to launch it. These are
+// read by `fetch`/`XHR`, which use CORS (the CDN allows it), so they are warmed with
+// mode "cors": an opaque entry would be rejected when the core asks for a cors read.
+// Other cores fill in on first use; between them these are what offline play needs.
+const WARM_CORS = [
+  EJS_BASE + "version.json",
+  EJS_BASE + "extract7z.js",
+  EJS_BASE + "cores/melonds.json",
+  EJS_BASE + "cores/melonds-wasm.data",
+  EJS_BASE + "localization/en-US.json",
+];
+
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(SHELL)
       .then((cache) => cache.addAll(SHELL_ASSETS.map((u) => new Request(u, { cache: "reload" }))))
       .catch(() => { /* a missing optional asset shouldn't block install */ })
+      .then(() => warmRuntime())
       .then(() => self.skipWaiting())
   );
 });
+
+// Best effort, and deliberately not awaited for install's success: a CDN hiccup must
+// not stop the worker from activating. Each asset lands in the runtime cache under
+// its URL, so the page's later request matches it.
+function warmOne(cache, url, mode) {
+  return fetch(url, { mode })
+    .then((res) => { if (res) return cache.put(url, res.clone()); })
+    .catch(() => { /* offline install: fill it on first use instead */ });
+}
+
+function warmRuntime() {
+  return caches.open(RUNTIME).then((cache) =>
+    Promise.all([
+      ...WARM_NO_CORS.map((u) => warmOne(cache, u, "no-cors")),
+      ...WARM_CORS.map((u) => warmOne(cache, u, "cors")),
+    ])
+  ).catch(() => {});
+}
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
@@ -119,11 +161,21 @@ self.addEventListener("fetch", (event) => {
 
   // Cache first, refresh in the background: cores are immutable per release, so a
   // stale-while-revalidate read is a good fit.
+  //
+  // The EmulatorJS loader, its stylesheet and the minified bundle are injected as
+  // plain <script>/<link> tags with no crossorigin attribute, so the browser fetches
+  // them without CORS and they arrive as opaque responses (status 0). Those bytes
+  // cannot be read or re-wrapped here, but they can still be stored and handed back
+  // to the same kind of tag, which is exactly what a cold offline start needs. An
+  // earlier guard accepted only "basic"/"cors" and quietly dropped them, so the page
+  // shell cached while the emulator itself did not.
   event.respondWith(
     Promise.resolve(caches.match(request)).then((hit) => {
       const network = fetch(request)
         .then((res) => {
-          if (res && res.status === 200 && (res.type === "basic" || res.type === "cors")) {
+          const storable = res && (res.type === "opaque" || res.status === 200);
+          const usable = res && (res.type === "opaque" || res.type === "basic" || res.type === "cors");
+          if (storable && usable) {
             const copy = res.clone();
             caches.open(RUNTIME).then((c) => c.put(request, copy)).catch(() => {});
           }
@@ -132,6 +184,8 @@ self.addEventListener("fetch", (event) => {
         .catch(() => hit || Response.error());
 
       const response = Promise.resolve(hit || network);
+      // Only same-origin responses can be re-wrapped; an opaque one has no readable
+      // body and would throw if passed to the Response constructor.
       return sameOrigin ? response.then((r) => withHeaders(r, CORP)) : response;
     })
   );

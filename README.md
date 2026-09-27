@@ -1,7 +1,8 @@
 # NDS Pocket
 
-A landscape-first Nintendo DS player that runs entirely in the browser, built on
-[EmulatorJS](https://emulatorjs.org/) with the `melonds` core.
+A Nintendo DS player that runs entirely in the browser, built on
+[EmulatorJS](https://emulatorjs.org/) with the `melonds` core. It works in either
+orientation and, once opened, keeps working offline.
 
 **Bring your own ROM.** You pick a file, it is read on your device, and it is
 never uploaded anywhere. The site ships no games, no BIOS files and no
@@ -11,9 +12,11 @@ copyrighted content.
 
 1. Open the site and tap **Add ROM**, then choose a `.nds` file. A `.zip`
    containing a ROM works too.
-2. Rotate to landscape. On iPhone, add it to the home screen first
-   (**Share → Add to Home Screen**) so it launches without browser chrome.
-3. Play. The DS touchscreen is the right-hand panel — tap it directly.
+2. Play. On iPhone, add it to the home screen first (**Share → Add to Home
+   Screen**) so it launches without browser chrome and can run offline.
+3. The two DS screens are shown side by side in landscape and stacked in
+   portrait. **Auto** in the top bar follows the way you hold the phone; tap it to
+   pin **Side** or **Stacked** instead.
 
 The emulator menu is the small handle at the bottom centre. Its own fullscreen
 button is intentionally hidden, because EmulatorJS force-locks NDS fullscreen to
@@ -47,7 +50,9 @@ gamepad badge once one connects. The on-screen pad has an opacity slider (20–1
 and a **Pad on/off** toggle for when you are using a physical controller.
 
 Because the pad covers the left half, that area maps to the **top screen**. The
-touchscreen is the right half, and stays clear for games that use it.
+touchscreen is the right half, and stays clear for games that use it. In portrait
+the pad zone follows the top screen, since the stacked pair puts it in the upper
+half and leaves the lower half free for the touchscreen.
 
 ### Autosave
 
@@ -69,12 +74,20 @@ state, so turning it back on never drops you into a moment you have moved past.
 - **A boot watchdog catches rejected ROMs.** When a core cannot parse a file it
   only paints "Failed to start game" inside its own canvas, so the shell polls
   for that and shows an actionable card instead of hanging.
-- **Both screens sit side by side** by default, which suits landscape. Change it
-  under Menu → Backend Core Options → Screen Layout.
-- **The frame fills the screen width.** A DS screen pair is about 2.67:1, so on a
-  phone it is much wider than it is tall. The canvas is shaped to that ratio rather
-  than stretched to the window, which keeps the pixels square and leaves the frame
-  edges against a blurred copy of the picture instead of black bars.
+- **Offline play works after one online visit.** The worker caches the app shell
+  at install and warms the EmulatorJS front end (loader, stylesheet, bundle) and
+  the default `melonds` core. The CDN serves the scripts without CORS, so those
+  land in the cache as opaque responses — storable and replayable, but unreadable,
+  which is why the worker treats them differently from the core files.
+- **The screen layout follows the orientation.** Side by side in landscape,
+  stacked in portrait, with a **Layout** button to pin either one. Switching swaps
+  the core's own `Screen Layout` option and refits the canvas; the same pass runs
+  on rotation, so turning the phone changes the layout live without a reload.
+- **The frame keeps its aspect ratio.** A side-by-side pair is about 2.67:1 and a
+  stacked pair about 0.67:1. The canvas is shaped to whichever the core reports and
+  sized to fit the stage on its binding axis, so it never stretches or runs off the
+  screen, and the frame edges sit against a soft copy of the picture rather than
+  black bars.
 
 ## Deploying
 
